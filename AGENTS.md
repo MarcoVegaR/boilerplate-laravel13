@@ -11,6 +11,7 @@ This application is a Laravel application and its main Laravel ecosystems packag
 
 - php - 8.5
 - inertiajs/inertia-laravel (INERTIA_LARAVEL) - v2
+- laravel/ai (AI) - v0
 - laravel/fortify (FORTIFY) - v1
 - laravel/framework (LARAVEL) - v13
 - laravel/prompts (PROMPTS) - v0
@@ -128,6 +129,7 @@ This project has domain-specific skills available. You MUST activate the relevan
 - Use appropriate PHP type hints for method parameters.
 
 <!-- Explicit Return Types and Method Params -->
+
 ```php
 protected function isAccessible(User $user, ?string $path = null): bool
 {
@@ -263,6 +265,61 @@ Wayfinder generates TypeScript functions for Laravel routes. Import from `@/acti
 
 - Fortify is a headless authentication backend that provides authentication routes and controllers for Laravel applications.
 - IMPORTANT: Always use the `search-docs` tool for detailed Laravel Fortify patterns and documentation.
-- IMPORTANT: Activate `developing-with-fortify` skill when working with Fortify authentication features.
+- IMPORTANT: Activate `fortify-development` skill when working with Fortify authentication features.
 
 </laravel-boost-guidelines>
+
+<project-guidelines>
+
+# Gentleman Project Guidance
+
+## Identity And Mindset
+
+- Operate like a senior architect and cognitive partner inside The Gentleman ecosystem: clarify intent, frame tradeoffs, and steer toward durable solutions.
+- Put concepts before code. Understand the domain, constraints, and downstream effects before proposing implementation details.
+- Challenge weak decisions politely but directly. If a choice harms maintainability, security, clarity, or delivery, say so and recommend a stronger default.
+- Keep guidance practical. Prefer concise rules, concrete actions, and repository-native patterns over long generic essays.
+
+## Current Project Context
+
+- This repository is a Laravel 13 application on PHP 8.4+ with PostgreSQL, Redis, Mailpit, Inertia React, Tailwind CSS v4, Laravel Boost, Laravel Fortify, Laravel Wayfinder, and the Laravel AI SDK.
+- Treat PostgreSQL, Redis, and Mailpit as the default local service baseline.
+- Keep AWS and other cloud-provider choices neutral unless the user explicitly asks to wire a specific platform.
+- For environment baseline or onboarding work, update both `.env` and `.env.example` together.
+
+## Skill Activation Map
+
+- Use skills proactively; load them before implementation when their trigger appears.
+- `inertia-react-development` — React pages, Inertia navigation, forms, `useForm`, deferred props, polling, prefetching, client-side page behavior.
+- `tailwindcss-development` — Tailwind requests, UI styling, layout work, spacing/typography fixes, responsive component composition.
+- `wayfinder-development` — Frontend calls to Laravel routes, imports from `@/actions` or `@/routes`, Wayfinder route helpers or `.form()` usage.
+- `fortify-development` — Login, registration, password reset, email verification, 2FA/TOTP, profile/auth flows, Fortify backend behavior.
+- `pest-testing` — Any Pest test creation, edits, refactors, browser tests, smoke tests, assertions, or broken-test fixes.
+- For medium or large changes, pair the domain skill with the relevant SDD skill instead of improvising the workflow.
+
+## Engram-First Memory Policy
+
+- Before substantial work, search Engram for relevant project context, prior decisions, and earlier fixes.
+- After important work, save the result to Engram under `global-opencode-setup`, especially for decisions, bugs, discoveries, workflow conventions, and setup changes.
+- Keep memory entries concise and retrieval-friendly: what changed, why it mattered, where it happened, and any gotchas.
+
+## Workflow And Orchestration
+
+- Small direct fixes are allowed when scope is obvious, risk is low, and the change can be verified quickly.
+- Use Spec-Driven Development for medium and large changes: multi-file features, architecture changes, ambiguous scope, or work that benefits from proposal/spec/design/tasks artifacts.
+- Default flow for larger work: explore the problem, define the change, design the approach, break it into tasks, then implement and verify.
+- Keep AGENTS.md complementary to Laravel Boost guidance; add project-specific operating rules here instead of contradicting framework guidance.
+
+## Human In The Loop
+
+- Keep humans involved for architecture pivots, authentication or authorization strategy, security-sensitive behavior, destructive actions, package/dependency changes, and billing or production-impacting decisions.
+- When requirements are clear and risk is low, choose the most sensible local default, make the change, and report the reasoning instead of blocking on approval.
+- Escalate when a tradeoff materially changes scope, operational posture, or long-term maintenance cost.
+
+## Practical Verification
+
+- Prefer the minimum verification that proves the change: focused `php artisan test --compact` runs, targeted frontend checks, and `vendor/bin/pint --dirty --format agent` whenever PHP files change.
+- Do not create throwaway verification scripts when existing tests or focused framework tooling can prove the behavior.
+- If a configuration change depends on local services, verify with commands that fail clearly and document any prerequisite in the final report.
+
+</project-guidelines>
