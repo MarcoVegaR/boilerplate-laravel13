@@ -1,6 +1,6 @@
 # Boilerplate Laravel 13
 
-Laravel 13 local starter based on the official React starter kit, using Inertia, Fortify, Wayfinder, PostgreSQL, Redis, Mailpit, and the Laravel AI SDK.
+Laravel 13 local starter based on the official React starter kit, using Inertia, Fortify, Wayfinder, PostgreSQL, Redis, Mailpit, MinIO, and the Laravel AI SDK.
 
 ## Stack
 
@@ -10,6 +10,7 @@ Laravel 13 local starter based on the official React starter kit, using Inertia,
 - PostgreSQL
 - Redis
 - Mailpit
+- MinIO
 - Laravel Boost + Laravel AI SDK + Gentleman ecosystem workflows
 
 ## Starter Kit Notes
@@ -24,6 +25,8 @@ The intended local baseline is:
 - Redis on `127.0.0.1:6379`
 - Mailpit SMTP on `127.0.0.1:1025`
 - Mailpit web UI on `http://127.0.0.1:8025`
+- MinIO S3 API on `http://127.0.0.1:9000`
+- MinIO console on `http://127.0.0.1:9001`
 
 Environment defaults are configured for:
 
@@ -31,8 +34,7 @@ Environment defaults are configured for:
 - faker locale: `es_VE`
 - timezone: `America/Caracas`
 - cache/session/queue: Redis
-
-AWS is intentionally not configured for this local setup. Any AWS-related environment variables are left neutral for future use only.
+- object storage: MinIO through Laravel's `s3` disk
 
 ## First-Time Setup
 
@@ -50,7 +52,7 @@ cp .env.example .env
 php artisan key:generate
 ```
 
-3. Make sure PostgreSQL, Redis, and Mailpit are running.
+3. Make sure PostgreSQL, Redis, Mailpit, and MinIO are running.
 
 4. Run the database migrations:
 
@@ -66,10 +68,19 @@ composer run dev
 
 This runs the Laravel server, queue listener, log tailing, and Vite together.
 
+For dedicated local worker processes:
+
+```bash
+composer run local:queue
+composer run local:schedule
+```
+
 ## Daily Commands
 
 ```bash
 composer run dev
+composer run local:queue
+composer run local:schedule
 php artisan test --compact
 vendor/bin/pint --dirty --format agent
 npm run build
@@ -96,6 +107,16 @@ Redis is the default local backing service for:
 - queues
 
 This keeps local development closer to a Laravel Cloud-style runtime without pretending cloud infrastructure is present.
+
+## MinIO
+
+Local object storage is configured through Laravel's `s3` disk and points to MinIO by default:
+
+- endpoint: `http://127.0.0.1:9000`
+- console: `http://127.0.0.1:9001`
+- bucket: `boilerplate-laravel13-local`
+
+The MinIO credentials are defined in `.env` through `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD`, then reused by the `AWS_*` variables Laravel expects.
 
 ## Laravel AI SDK
 
@@ -126,6 +147,8 @@ Useful focused checks:
 
 ```bash
 php artisan test --compact tests/Feature/ExampleTest.php tests/Feature/DashboardTest.php tests/Feature/Auth/AuthenticationTest.php
+php artisan config:show filesystems.disks.s3
+php artisan tinker --execute="dump(Storage::disk('s3')->allFiles())"
 vendor/bin/pint --dirty --format agent
 php artisan config:show app
 ```
@@ -133,4 +156,4 @@ php artisan config:show app
 ## Notes
 
 - If frontend changes are not visible, run `npm run build`, `npm run dev`, or `composer run dev`.
-- If Redis or Mailpit are not running, queue, session, cache, or mail behavior will fail in expected ways until those local services are available.
+- If Redis, Mailpit, or MinIO are not running, queue, session, cache, mail, or object-storage behavior will fail in expected ways until those local services are available.
