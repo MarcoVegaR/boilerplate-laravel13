@@ -2,12 +2,32 @@
 
 use App\Models\User;
 use Illuminate\Support\Facades\RateLimiter;
+use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Fortify\Features;
 
 test('login screen can be rendered', function () {
-    $response = $this->get(route('login'));
+    $this->get(route('login'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('auth/login')
+            ->where('ui.locale', 'es')
+            ->where('ui.branding.application', 'Boilerplate Caracoders')
+            ->missing('authSurface')
+            ->where('canResetPassword', true),
+        );
+});
 
-    $response->assertOk();
+test('guests are redirected from root to login', function () {
+    $this->get(route('home'))
+        ->assertRedirect(route('login', absolute: false));
+});
+
+test('authenticated users are redirected from root to dashboard', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->get(route('home'))
+        ->assertRedirect(route('dashboard', absolute: false));
 });
 
 test('users can authenticate using the login screen', function () {

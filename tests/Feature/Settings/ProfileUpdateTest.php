@@ -1,15 +1,23 @@
 <?php
 
 use App\Models\User;
+use Inertia\Testing\AssertableInertia as Assert;
 
 test('profile page is displayed', function () {
     $user = User::factory()->create();
 
-    $response = $this
-        ->actingAs($user)
-        ->get(route('profile.edit'));
-
-    $response->assertOk();
+    $this->actingAs($user)
+        ->get(route('profile.edit'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('settings/profile')
+            ->where('ui.locale', 'es')
+            ->where('ui.settingsSection.title', 'Configuración')
+            ->where('ui.settingsNavigation.0.title', 'Perfil')
+            ->where('ui.settingsNavigation.1.title', 'Seguridad')
+            ->where('ui.settingsNavigation.2.title', 'Apariencia')
+            ->where('canDeleteAccount', false),
+        );
 });
 
 test('profile information can be updated', function () {
@@ -50,36 +58,24 @@ test('email verification status is unchanged when the email address is unchanged
     expect($user->refresh()->email_verified_at)->not->toBeNull();
 });
 
-test('user can delete their account', function () {
+test('profile deletion route is not exposed', function () {
     $user = User::factory()->create();
 
-    $response = $this
-        ->actingAs($user)
-        ->delete(route('profile.destroy'), [
-            'password' => 'password',
-        ]);
-
-    $response
-        ->assertSessionHasNoErrors()
-        ->assertRedirect(route('home'));
-
-    $this->assertGuest();
-    expect($user->fresh())->toBeNull();
+    $this->actingAs($user)
+        ->delete('/settings/profile')
+        ->assertMethodNotAllowed();
 });
 
-test('correct password must be provided to delete account', function () {
+test('profile validation feedback is presented in spanish', function () {
     $user = User::factory()->create();
 
-    $response = $this
-        ->actingAs($user)
-        ->from(route('profile.edit'))
-        ->delete(route('profile.destroy'), [
-            'password' => 'wrong-password',
+    $this->actingAs($user)
+        ->patch(route('profile.update'), [
+            'name' => '',
+            'email' => 'correo-invalido',
+        ])
+        ->assertSessionHasErrors([
+            'name' => __('validation.required', ['attribute' => __('validation.attributes.name')]),
+            'email' => __('validation.email', ['attribute' => __('validation.attributes.email')]),
         ]);
-
-    $response
-        ->assertSessionHasErrors('password')
-        ->assertRedirect(route('profile.edit'));
-
-    expect($user->fresh())->not->toBeNull();
 });

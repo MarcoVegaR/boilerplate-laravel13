@@ -20,6 +20,8 @@ test('security page is displayed', function () {
         ->get(route('security.edit'))
         ->assertInertia(fn (Assert $page) => $page
             ->component('settings/security')
+            ->where('ui.locale', 'es')
+            ->where('ui.settingsNavigation.1.title', 'Seguridad')
             ->where('canManageTwoFactor', true)
             ->where('twoFactorEnabled', false),
         );
@@ -94,6 +96,33 @@ test('password can be updated', function () {
         ->assertRedirect(route('security.edit'));
 
     expect(Hash::check('new-password', $user->refresh()->password))->toBeTrue();
+});
+
+test('appearance page remains available', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->get(route('appearance.edit'))
+        ->assertOk()
+        ->assertViewHas('appearance', 'light')
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('settings/appearance')
+            ->where('ui.locale', 'es')
+            ->where('ui.appearance.palette', 'violet')
+            ->where('ui.appearance.defaultMode', 'light')
+            ->where('ui.appearance.supportedModes', ['light', 'dark', 'system'])
+            ->missing('appearanceContent'),
+        );
+});
+
+test('appearance middleware respects the persisted cookie value', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->withUnencryptedCookie('appearance', 'dark')
+        ->get(route('appearance.edit'))
+        ->assertOk()
+        ->assertViewHas('appearance', 'dark');
 });
 
 test('correct password must be provided to update password', function () {

@@ -7,20 +7,35 @@ import { cn } from '@/lib/utils';
 
 export default function AppearanceToggleTab({
     className = '',
+    supportedModes = ['light', 'dark', 'system'],
+    labels = {
+        light: 'Claro',
+        dark: 'Oscuro',
+        system: 'Sistema',
+    },
     ...props
-}: HTMLAttributes<HTMLDivElement>) {
+}: HTMLAttributes<HTMLDivElement> & {
+    supportedModes?: Appearance[];
+    labels?: Record<Appearance, string>;
+}) {
     const { appearance, updateAppearance } = useAppearance();
 
-    const tabs: { value: Appearance; icon: LucideIcon; label: string }[] = [
-        { value: 'light', icon: Sun, label: 'Light' },
-        { value: 'dark', icon: Moon, label: 'Dark' },
-        { value: 'system', icon: Monitor, label: 'System' },
-    ];
+    const tabIcons: Record<Appearance, LucideIcon> = {
+        light: Sun,
+        dark: Moon,
+        system: Monitor,
+    };
+
+    const tabs = supportedModes.map((value) => ({
+        value,
+        icon: tabIcons[value],
+        label: labels[value],
+    }));
 
     return (
         <div
             className={cn(
-                'inline-flex gap-1 rounded-lg bg-neutral-100 p-1 dark:bg-neutral-800',
+                'inline-flex gap-1 rounded-lg bg-primary/10 p-1 dark:bg-primary/15',
                 className,
             )}
             {...props}
@@ -32,8 +47,8 @@ export default function AppearanceToggleTab({
                     className={cn(
                         'flex items-center rounded-md px-3.5 py-1.5 transition-colors',
                         appearance === value
-                            ? 'bg-white shadow-xs dark:bg-neutral-700 dark:text-neutral-100'
-                            : 'text-neutral-500 hover:bg-neutral-200/60 hover:text-black dark:text-neutral-400 dark:hover:bg-neutral-700/60',
+                            ? 'bg-background text-foreground shadow-xs'
+                            : 'text-muted-foreground hover:bg-primary/10 hover:text-foreground',
                     )}
                 >
                     <Icon className="-ml-1 h-4 w-4" />

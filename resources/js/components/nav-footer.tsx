@@ -1,20 +1,14 @@
 import type { ComponentPropsWithoutRef } from 'react';
-import {
-    SidebarGroup,
-    SidebarGroupContent,
-    SidebarMenu,
-    SidebarMenuButton,
-    SidebarMenuItem,
-} from '@/components/ui/sidebar';
-import { toUrl } from '@/lib/utils';
-import type { NavItem } from '@/types';
+import { SidebarGroup, SidebarGroupContent } from '@/components/ui/sidebar';
 
 export function NavFooter({
-    items,
+    title,
+    subtitle,
     className,
     ...props
 }: ComponentPropsWithoutRef<typeof SidebarGroup> & {
-    items: NavItem[];
+    title: string;
+    subtitle: string;
 }) {
     return (
         <SidebarGroup
@@ -22,27 +16,14 @@ export function NavFooter({
             className={`group-data-[collapsible=icon]:p-0 ${className || ''}`}
         >
             <SidebarGroupContent>
-                <SidebarMenu>
-                    {items.map((item) => (
-                        <SidebarMenuItem key={item.title}>
-                            <SidebarMenuButton
-                                asChild
-                                className="text-neutral-600 hover:text-neutral-800 dark:text-neutral-300 dark:hover:text-neutral-100"
-                            >
-                                <a
-                                    href={toUrl(item.href)}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                >
-                                    {item.icon && (
-                                        <item.icon className="h-5 w-5" />
-                                    )}
-                                    <span>{item.title}</span>
-                                </a>
-                            </SidebarMenuButton>
-                        </SidebarMenuItem>
-                    ))}
-                </SidebarMenu>
+                <div className="rounded-xl border border-sidebar-border/70 bg-sidebar-accent/40 p-4 text-sm group-data-[collapsible=icon]:hidden">
+                    <p className="font-semibold text-sidebar-foreground">
+                        {title}
+                    </p>
+                    <p className="mt-1 text-sidebar-foreground/75">
+                        {subtitle}
+                    </p>
+                </div>
             </SidebarGroupContent>
         </SidebarGroup>
     );

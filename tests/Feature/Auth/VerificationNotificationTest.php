@@ -18,7 +18,9 @@ test('sends verification notification', function () {
         ->post(route('verification.send'))
         ->assertRedirect(route('home'));
 
-    Notification::assertSentTo($user, VerifyEmail::class);
+    Notification::assertSentTo($user, VerifyEmail::class, function (VerifyEmail $notification) use ($user) {
+        return $notification->toMail($user)->subject === 'Verifica tu correo electrónico';
+    });
 });
 
 test('does not send verification notification if email is verified', function () {

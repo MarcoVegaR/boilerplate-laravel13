@@ -42,6 +42,55 @@ class HandleInertiaRequests extends Middleware
                 'user' => $request->user(),
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+            'ui' => [
+                'locale' => app()->getLocale(),
+                'branding' => [
+                    'application' => 'Boilerplate Caracoders',
+                    'company' => 'Caracoders Pro Services',
+                    'footerSubtitle' => 'Base interna segura y lista para crecer',
+                    'shellTagline' => 'Boilerplate corporativo en español',
+                    'mobileBlurb' => 'Baseline corporativo para sistemas internos.',
+                ],
+                'navigation' => [
+                    'label' => 'Navegación',
+                    'items' => [
+                        [
+                            'title' => 'Panel',
+                            'href' => route('dashboard', absolute: false),
+                        ],
+                    ],
+                    'starterPromoLinksRemoved' => true,
+                ],
+                'settingsSection' => [
+                    'title' => 'Configuración',
+                    'description' => 'Administra tu perfil, seguridad y preferencias visuales',
+                    'ariaLabel' => 'Configuración',
+                ],
+                'settingsNavigation' => [
+                    [
+                        'title' => 'Perfil',
+                        'href' => route('profile.edit', absolute: false),
+                    ],
+                    [
+                        'title' => 'Seguridad',
+                        'href' => route('security.edit', absolute: false),
+                    ],
+                    [
+                        'title' => 'Apariencia',
+                        'href' => route('appearance.edit', absolute: false),
+                    ],
+                ],
+                'appearance' => [
+                    'palette' => 'violet',
+                    'defaultMode' => 'light',
+                    'supportedModes' => ['light', 'dark', 'system'],
+                    'labels' => [
+                        'light' => 'Claro',
+                        'dark' => 'Oscuro',
+                        'system' => 'Sistema',
+                    ],
+                ],
+            ],
         ];
     }
 }
