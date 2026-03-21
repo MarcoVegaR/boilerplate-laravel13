@@ -3,7 +3,6 @@
 namespace Database\Seeders;
 
 use App\Models\User;
-// use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
 class DatabaseSeeder extends Seeder
@@ -13,16 +12,22 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        // Roles and permissions are seeded in all environments
+        $this->call(RolesAndPermissionsSeeder::class);
+
         if (! in_array((string) config('app.env'), ['local', 'testing'], true)) {
             return;
         }
 
-        User::query()->updateOrCreate([
+        $admin = User::query()->updateOrCreate([
             'email' => 'test@mailinator.com',
         ], [
             'name' => 'Administrador',
             'password' => '12345678',
             'email_verified_at' => now(),
         ]);
+
+        // Assign super-admin role to local admin user (idempotent)
+        $admin->assignRole('super-admin');
     }
 }

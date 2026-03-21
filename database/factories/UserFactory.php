@@ -57,4 +57,17 @@ class UserFactory extends Factory
             'two_factor_confirmed_at' => now(),
         ]);
     }
+
+    /**
+     * Indicate that the user has the super-admin role.
+     *
+     * Requires RolesAndPermissionsSeeder to have run before this state is applied,
+     * as the super-admin role must exist in the database.
+     */
+    public function withSuperAdmin(): static
+    {
+        return $this->afterCreating(function (User $user) {
+            $user->assignRole('super-admin');
+        });
+    }
 }

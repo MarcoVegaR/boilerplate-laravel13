@@ -1,5 +1,7 @@
 # PRD 1 - Personalizacion base corporativa del boilerplate
 
+> Nota de secuencia: este archivo se mantiene con el nombre historico `PRD.md` y debe leerse como el PRD-01 completado. Se conserva asi como alias retrocompatible para no romper referencias existentes mientras `PRD-00.md` cumple el rol de documento de gobierno y alcance del producto.
+
 ## Problema
 
 El proyecto parte de un starter kit fresco de Laravel 13 pensado como base publica y generica. En su estado actual, todavia conserva comportamientos, textos, branding y flujos que no corresponden a un sistema web interno desarrollado por `Caracoders Pro Services`.
@@ -32,17 +34,17 @@ Los principales problemas a resolver son:
 - Dejar login como raiz del proyecto.
 - Desactivar la welcome page como interfaz de entrada y comentarla donde aplique.
 - Traducir completamente al espanol:
-  - auth
-  - settings
-  - dashboard inicial
-  - sidebar
-  - breadcrumbs
-  - formularios
-  - placeholders
-  - validaciones
-  - correos de reset/verificacion
-  - 2FA
-  - titulos de pagina
+    - auth
+    - settings
+    - dashboard inicial
+    - sidebar
+    - breadcrumbs
+    - formularios
+    - placeholders
+    - validaciones
+    - correos de reset/verificacion
+    - 2FA
+    - titulos de pagina
 - Reemplazar branding Laravel/starter por branding de `Boilerplate Caracoders` y `Caracoders Pro Services`.
 - Reemplazar logos e iconos usando como referencia el repo `boilerplate-laravel12`.
 - Agregar footer corporativo simple.
@@ -105,9 +107,9 @@ Los principales problemas a resolver son:
 - Ejecutar validacion programatica del cambio con tests enfocados.
 - Si se modifican archivos PHP, ejecutar `vendor/bin/pint --dirty --format agent`.
 - Mantener seguridad razonable del baseline:
-  - passwords hasheadas correctamente
-  - no exponer registro publico
-  - no introducir dependencias innecesarias
+    - passwords hasheadas correctamente
+    - no exponer registro publico
+    - no introducir dependencias innecesarias
 - Mantener la UI consistente con el sistema visual del proyecto.
 
 ## Criterios de Aceptacion
@@ -140,8 +142,8 @@ Los principales problemas a resolver son:
 - Seeder de base de datos para el admin local.
 - Assets/logo tomados como referencia desde `boilerplate-laravel12`.
 - MCPs activos del proyecto:
-  - `laravel-boost`
-  - `shadcn`
+    - `laravel-boost`
+    - `shadcn`
 
 ### Riesgos
 
