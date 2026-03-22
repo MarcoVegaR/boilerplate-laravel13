@@ -12,14 +12,27 @@ use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Laravel\Fortify\TwoFactorAuthenticatable;
+use OwenIt\Auditing\Contracts\Auditable;
 use Spatie\Permission\Traits\HasRoles;
 
 #[Fillable(['name', 'email', 'password'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
-class User extends Authenticatable implements MustVerifyEmail
+class User extends Authenticatable implements Auditable, MustVerifyEmail
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, HasRoles, Notifiable, TwoFactorAuthenticatable;
+    use HasFactory, HasRoles, Notifiable, \OwenIt\Auditing\Auditable, TwoFactorAuthenticatable;
+
+    /**
+     * Defense-in-depth: also excluded globally in config/audit.php.
+     *
+     * @var list<string>
+     */
+    protected $auditExclude = [
+        'password',
+        'two_factor_secret',
+        'two_factor_recovery_codes',
+        'remember_token',
+    ];
 
     /**
      * Get the attributes that should be cast.

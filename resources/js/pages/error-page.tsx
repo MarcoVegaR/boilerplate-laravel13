@@ -3,13 +3,11 @@ import { dashboard, login } from '@/routes';
 import type { Auth } from '@/types/auth';
 
 type ErrorPageProps = {
-    status: 403 | 404 | 500 | 503;
+    status: number;
+    message?: string;
 };
 
-const errorContent: Record<
-    ErrorPageProps['status'],
-    { title: string; description: string }
-> = {
+const errorContent: Record<number, { title: string; description: string }> = {
     403: {
         title: 'Acceso denegado',
         description:
@@ -32,7 +30,7 @@ const errorContent: Record<
     },
 };
 
-function useErrorAction(status: ErrorPageProps['status'], isAuthenticated: boolean) {
+function useErrorAction(status: number, isAuthenticated: boolean) {
     if (status === 503) {
         return { label: 'Reintentar', href: null };
     }
@@ -44,10 +42,15 @@ function useErrorAction(status: ErrorPageProps['status'], isAuthenticated: boole
     return { label: 'Volver al inicio', href: login() };
 }
 
-export default function ErrorPage({ status }: ErrorPageProps) {
+export default function ErrorPage({ status, message }: ErrorPageProps) {
     const { auth } = usePage<{ auth: Auth }>().props;
     const isAuthenticated = !!auth?.user;
-    const content = errorContent[status];
+    const content = errorContent[status as keyof typeof errorContent] ?? {
+        title: `Error ${status}`,
+        description:
+            message ??
+            'Ocurrió un error inesperado. Por favor intenta de nuevo.',
+    };
     const action = useErrorAction(status, isAuthenticated);
 
     return (

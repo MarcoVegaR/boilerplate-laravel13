@@ -293,7 +293,9 @@ Este cierre es documental. Los ADRs y PRDs listados abajo se entienden como cont
     - **PRD-01**: Personalizacion base corporativa del boilerplate _(completado, alias PRD.md)_
     - **PRD-02**: Nucleo de identidad y autorizacion
     - **PRD-03**: Operabilidad transversal del boilerplate
-    - **PRD-04**: Administracion de acceso — roles, permisos y asignacion de usuarios
+    - **PRD-04**: Estandar de modulos CRUD administrativos
+    - **PRD-05**: Administracion de acceso — roles, permisos y asignacion de usuarios
+    - **PRD-06**: Visor administrativo de auditoria _(si se decide como modulo separado)_
 
 ## 8. Decisiones congeladas de esta version
 

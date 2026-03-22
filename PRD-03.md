@@ -198,22 +198,24 @@ LOG_FORMAT=json
 El boilerplate implementará un middleware que:
 
 1. Genera un UUID como `correlation_id` para cada request HTTP (o reutiliza uno entrante en header `X-Correlation-ID` para tracing distribuido futuro).
-2. Lo registra en el contexto compartido del logger de Laravel via `Log::shareContext()`.
+2. Lo registra en el contexto del request via `Context::add()` (facade `Illuminate\\Support\\Facades\\Context`).
 3. Lo hace disponible al request actual.
 
 El contexto compartido mínimo será:
 
 ```php
-Log::shareContext([
-    'correlation_id' => $correlationId,
-    'user_id' => $request->user()?->id,
-    'url' => $request->method() . ' ' . $request->path(),
-]);
+Context::add('correlation_id', $correlationId);
+Context::add('user_id', $request->user()?->id);
+Context::add('url', $request->method() . ' ' . $request->path());
 ```
+
+> **Nota**: Se usa `Context::add()` en lugar de `Log::shareContext()` porque el Context de Laravel
+> se propaga automáticamente a todos los jobs despachados en la misma solicitud. `Log::shareContext()`
+> es solo request-scoped y NO se propaga a jobs en cola.
 
 #### Propagación a jobs
 
-Cuando un job se despacha desde un request con `correlation_id`, el job debe heredar ese ID para que los logs del job sean correlacionables con el request que lo originó. Esto se puede resolver con un middleware de job o con serialización del contexto.
+Cuando un job se despacha desde un request con `correlation_id`, el job hereda ese ID automáticamente a través del Context facade de Laravel. No se requiere ningún código adicional en el job — el worker de colas restaura el Context del payload del job.
 
 #### Reglas
 
@@ -527,7 +529,13 @@ Al cerrar este PRD, el boilerplate debe tener:
 
 El siguiente documento lógico será:
 
-**PRD-04 — Administración de Acceso: Roles, Permisos y Asignación de Usuarios**
+**PRD-04 — Estándar de Módulos CRUD Administrativos**
+
+Ese PRD congelará el patrón reusable para módulos CRUD administrativos: páginas, tablas, formularios, permisos UI, componentes transversales y convenciones de controllers/requests/policies. Su objetivo es evitar que el primer módulo específico defina por accidente el estándar del sistema.
+
+Después de PRD-04, el siguiente será:
+
+**PRD-05 — Administración de Acceso: Roles, Permisos y Asignación de Usuarios**
 
 Ese PRD cubrirá:
 
@@ -536,13 +544,14 @@ Ese PRD cubrirá:
 - asignación permiso <-> rol;
 - asignación de roles a usuarios;
 - restricciones operativas;
-- visualización/matriz;
 - trazabilidad asociada (consumiendo la plataforma de auditoría de este PRD).
 
 La secuencia actualizada es:
 
 - **PRD-00**: Governance y framing _(completado)_
 - **PRD-01**: Personalización base corporativa _(completado, alias PRD.md)_
-- **PRD-02**: Núcleo de identidad y autorización
+- **PRD-02**: Núcleo de identidad y autorización _(completado)_
 - **PRD-03**: Operabilidad transversal _(este documento)_
-- **PRD-04**: Administración de acceso — roles, permisos y asignación de usuarios
+- **PRD-04**: Estándar de módulos CRUD administrativos
+- **PRD-05**: Administración de acceso — roles, permisos y asignación de usuarios
+- **PRD-06**: Visor administrativo de auditoría _(si se decide como módulo separado)_

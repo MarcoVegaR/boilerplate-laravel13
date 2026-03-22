@@ -1,13 +1,17 @@
 <?php
 
+use App\Exceptions\BoilerplateException;
 use App\Http\Middleware\EnsureTwoFactorEnabled;
 use App\Http\Middleware\HandleAppearance;
+use App\Http\Middleware\HandleCorrelation;
 use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Context;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -21,9 +25,14 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
 
         $middleware->web(append: [
+            HandleCorrelation::class,
             HandleAppearance::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
+        ]);
+
+        $middleware->api(append: [
+            HandleCorrelation::class,
         ]);
 
         $middleware->alias([
@@ -31,7 +40,19 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->report(function (Throwable $exception): void {
+            Log::error($exception->getMessage(), [
+                'correlation_id' => Context::get('correlation_id'),
+                'exception' => $exception::class,
+            ]);
+        });
+
         $exceptions->respond(function (Response $response, Throwable $exception, Request $request): Response {
+            // BoilerplateException renders itself — early return preserves the render() output
+            if ($exception instanceof BoilerplateException) {
+                return $response;
+            }
+
             if ($request->expectsJson()) {
                 return $response;
             }

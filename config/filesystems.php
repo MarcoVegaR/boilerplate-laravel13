@@ -47,6 +47,7 @@ return [
             'report' => false,
         ],
 
+        // AWS_USE_PATH_STYLE_ENDPOINT=true enables MinIO compatibility. MUST be false for real AWS S3.
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

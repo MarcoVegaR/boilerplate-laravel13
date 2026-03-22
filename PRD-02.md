@@ -405,7 +405,13 @@ Ese PRD cubrira la capa transversal de operabilidad: manejo de errores, logging 
 
 Despues de PRD-03, el siguiente sera:
 
-**PRD-04 — Administracion de Acceso: Roles, Permisos y Asignacion de Usuarios**
+**PRD-04 — Estandar de Modulos CRUD Administrativos**
+
+Ese PRD congelara el patron reusable para modulos CRUD administrativos: paginas, tablas, formularios, permisos UI, componentes transversales y convenciones de controllers/requests/policies. Su objetivo es evitar que el primer modulo especifico defina por accidente el estandar del sistema.
+
+Despues de PRD-04, el siguiente sera:
+
+**PRD-05 — Administracion de Acceso: Roles, Permisos y Asignacion de Usuarios**
 
 Ese PRD cubrira:
 
@@ -414,7 +420,6 @@ Ese PRD cubrira:
 - asignacion permiso <-> rol;
 - asignacion de roles a usuarios;
 - restricciones operativas;
-- visualizacion/matriz;
 - trazabilidad asociada (consumiendo la plataforma de auditoria de PRD-03).
 
 Este PRD solo cierra la capacidad fundacional que hara posibles esos modulos.

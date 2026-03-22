@@ -2,14 +2,26 @@
 
 namespace App\Providers;
 
+use App\Listeners\RecordFailedLogin;
+use App\Listeners\RecordLogout;
+use App\Listeners\RecordRoleAssigned;
+use App\Listeners\RecordRoleRevoked;
+use App\Listeners\RecordSuccessfulLogin;
 use App\Models\User;
+use App\Observers\TwoFactorAuditObserver;
 use App\Policies\UserPolicy;
 use Carbon\CarbonImmutable;
+use Illuminate\Auth\Events\Failed;
+use Illuminate\Auth\Events\Login;
+use Illuminate\Auth\Events\Logout;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
+use Spatie\Permission\Events\RoleAttachedEvent;
+use Spatie\Permission\Events\RoleDetachedEvent;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -28,6 +40,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
         $this->configurePolicies();
+        $this->configureAuditing();
     }
 
     /**
@@ -63,5 +76,19 @@ class AppServiceProvider extends ServiceProvider
     protected function configurePolicies(): void
     {
         Gate::policy(User::class, UserPolicy::class);
+    }
+
+    /**
+     * Register security event listeners and model observers.
+     */
+    private function configureAuditing(): void
+    {
+        Event::listen(Login::class, RecordSuccessfulLogin::class);
+        Event::listen(Failed::class, RecordFailedLogin::class);
+        Event::listen(Logout::class, RecordLogout::class);
+        Event::listen(RoleAttachedEvent::class, RecordRoleAssigned::class);
+        Event::listen(RoleDetachedEvent::class, RecordRoleRevoked::class);
+
+        User::observe(TwoFactorAuditObserver::class);
     }
 }
