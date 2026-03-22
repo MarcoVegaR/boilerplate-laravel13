@@ -2,6 +2,33 @@ import type { InertiaLinkProps } from '@inertiajs/react';
 import type { ReactNode } from 'react';
 import type { BreadcrumbItem } from '@/types/navigation';
 
+/** Flash data shared by HandleInertiaRequests */
+export type Flash = {
+    success: string | null;
+    error: string | null;
+    info: string | null;
+    warning: string | null;
+};
+
+/** Laravel paginator link shape as serialized by Inertia */
+export type PaginatorLink = {
+    url: string | null;
+    label: string;
+    active: boolean;
+};
+
+/** Generic paginated response from Laravel's ->paginate() */
+export type PaginatedData<T> = {
+    data: T[];
+    links: PaginatorLink[];
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+    from: number | null;
+    to: number | null;
+};
+
 export type AppLayoutProps = {
     children: ReactNode;
     breadcrumbs?: BreadcrumbItem[];

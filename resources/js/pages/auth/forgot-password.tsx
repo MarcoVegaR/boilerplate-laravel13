@@ -6,8 +6,8 @@ import TextLink from '@/components/text-link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { forgotPasswordContent } from '@/pages/auth/content';
 import AuthLayout from '@/layouts/auth-layout';
+import { forgotPasswordContent } from '@/pages/auth/content';
 import { login } from '@/routes';
 import { email } from '@/routes/password';
 

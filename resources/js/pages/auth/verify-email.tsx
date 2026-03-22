@@ -3,8 +3,8 @@ import { Form, Head } from '@inertiajs/react';
 import TextLink from '@/components/text-link';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import { verifyEmailContent } from '@/pages/auth/content';
 import AuthLayout from '@/layouts/auth-layout';
+import { verifyEmailContent } from '@/pages/auth/content';
 import { logout } from '@/routes';
 import { send } from '@/routes/verification';
 

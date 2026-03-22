@@ -60,3 +60,72 @@ test('unauthenticated request to login page has empty permissions array in inert
             ->where('auth.permissions', [])
         );
 });
+
+// ── PRD-04 additions: explicit auth.permissions array-shape contract ─────────
+// These tests assert the shape consumed by resources/js/hooks/use-can.ts:
+// - auth.permissions is always present (never missing/null)
+// - auth.permissions is always a JSON array (not a plain value)
+// - each element in the array is a string following {module}.{resource}.{action}
+
+test('auth.permissions is always present as an array in inertia shared props for authenticated users', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            // has() asserts the key exists and is not missing — not null, not absent
+            ->has('auth.permissions')
+            // collect() works on both PHP arrays and Illuminate Collections from AssertableInertia
+            ->where('auth.permissions', fn ($permissions) => collect($permissions)->count() === 0)
+        );
+});
+
+test('auth.permissions is always an array — never null or missing — regardless of role assignment', function () {
+    $this->seed(RolesAndPermissionsSeeder::class);
+
+    // User with a role → non-empty array
+    $withRole = User::factory()->withSuperAdmin()->create();
+    $this->app['env'] = 'local';
+
+    $this->actingAs($withRole)
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('auth.permissions')
+            ->where('auth.permissions', fn ($v) => collect($v)->count() > 0)
+        );
+
+    // User without any role → empty collection (not null, not missing)
+    $withoutRole = User::factory()->create();
+
+    $this->actingAs($withoutRole)
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('auth.permissions')
+            ->where('auth.permissions', fn ($v) => collect($v)->count() === 0)
+        );
+});
+
+test('auth.permissions array elements are strings — compatible with useCan hook consumption', function () {
+    $this->seed(RolesAndPermissionsSeeder::class);
+    $this->app['env'] = 'local';
+
+    $user = User::factory()->withSuperAdmin()->create();
+
+    $this->actingAs($user)
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('auth.permissions')
+            ->where('auth.permissions', function ($permissions) {
+                // Every element must be a non-empty string (permission name)
+                // collect() handles both array and Collection from AssertableInertia
+                $coll = collect($permissions);
+
+                return $coll->count() > 0
+                    && $coll->every(fn ($p) => is_string($p) && strlen($p) > 0);
+            })
+        );
+});

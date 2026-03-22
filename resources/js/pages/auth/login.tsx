@@ -7,8 +7,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
-import { loginContent } from '@/pages/auth/content';
 import AuthLayout from '@/layouts/auth-layout';
+import { loginContent } from '@/pages/auth/content';
 import { store } from '@/routes/login';
 import { request } from '@/routes/password';
 
