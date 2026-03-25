@@ -1,6 +1,8 @@
 import { Link, usePage } from '@inertiajs/react';
+import { Settings } from 'lucide-react';
 import type { PropsWithChildren } from 'react';
-import Heading from '@/components/heading';
+
+import { PageHeader } from '@/components/system/page-header';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useCurrentUrl } from '@/hooks/use-current-url';
@@ -11,22 +13,22 @@ export default function SettingsLayout({ children }: PropsWithChildren) {
     const { isCurrentOrParentUrl } = useCurrentUrl();
     const { ui } = usePage().props as { ui: SharedUiProps };
 
-    // When server-side rendering, we only render the layout on the client...
     if (typeof window === 'undefined') {
         return null;
     }
 
     return (
-        <div className="px-4 py-6">
-            <Heading
+        <div className="space-y-6 px-4 py-6 sm:px-6">
+            <PageHeader
+                icon={Settings}
                 title={ui.settingsSection.title}
                 description={ui.settingsSection.description}
             />
 
-            <div className="flex flex-col lg:flex-row lg:space-x-12">
-                <aside className="w-full max-w-xl lg:w-48">
+            <div className="flex flex-col gap-8 lg:flex-row">
+                <aside className="w-full shrink-0 lg:w-52">
                     <nav
-                        className="flex flex-col space-y-1 space-x-0"
+                        className="flex flex-col gap-1"
                         aria-label={ui.settingsSection.ariaLabel}
                     >
                         {ui.settingsNavigation.map((item, index) => (
@@ -35,9 +37,12 @@ export default function SettingsLayout({ children }: PropsWithChildren) {
                                 size="sm"
                                 variant="ghost"
                                 asChild
-                                className={cn('w-full justify-start', {
-                                    'bg-muted': isCurrentOrParentUrl(item.href),
-                                })}
+                                className={cn(
+                                    'w-full justify-start transition-colors',
+                                    isCurrentOrParentUrl(item.href)
+                                        ? 'bg-primary/10 font-medium text-primary hover:bg-primary/15'
+                                        : 'text-muted-foreground hover:text-foreground',
+                                )}
                             >
                                 <Link href={item.href}>{item.title}</Link>
                             </Button>
@@ -45,7 +50,7 @@ export default function SettingsLayout({ children }: PropsWithChildren) {
                     </nav>
                 </aside>
 
-                <Separator className="my-6 lg:hidden" />
+                <Separator className="lg:hidden" />
 
                 <div className="flex-1 md:max-w-2xl">
                     <section className="max-w-xl space-y-12">

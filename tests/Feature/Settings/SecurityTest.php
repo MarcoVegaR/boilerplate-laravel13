@@ -87,15 +87,15 @@ test('password can be updated', function () {
         ->from(route('security.edit'))
         ->put(route('user-password.update'), [
             'current_password' => 'password',
-            'password' => 'new-password',
-            'password_confirmation' => 'new-password',
+            'password' => 'N3w-P@ss!',
+            'password_confirmation' => 'N3w-P@ss!',
         ]);
 
     $response
         ->assertSessionHasNoErrors()
         ->assertRedirect(route('security.edit'));
 
-    expect(Hash::check('new-password', $user->refresh()->password))->toBeTrue();
+    expect(Hash::check('N3w-P@ss!', $user->refresh()->password))->toBeTrue();
 });
 
 test('appearance page remains available', function () {

@@ -46,6 +46,7 @@ export type AuthLayoutProps = {
 export type SharedUiLink = {
     title: string;
     href: NonNullable<InertiaLinkProps['href']>;
+    icon?: string | null;
 };
 
 export type SharedUiProps = {

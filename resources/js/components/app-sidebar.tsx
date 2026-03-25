@@ -14,6 +14,7 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
+import { resolveIcon } from '@/lib/system';
 import { dashboard } from '@/routes';
 import type { NavItem, SharedUiProps } from '@/types';
 
@@ -21,7 +22,7 @@ export function AppSidebar() {
     const { ui } = usePage().props as { ui: SharedUiProps };
     const mainNavItems: NavItem[] = ui.navigation.items.map((item) => ({
         ...item,
-        icon: LayoutGrid,
+        icon: resolveIcon(item.icon) ?? LayoutGrid,
     }));
 
     return (

@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -35,19 +36,21 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        $user = $request->user();
+
         return [
             ...parent::share($request),
             'name' => config('app.name'),
             'auth' => [
-                'user' => $request->user(),
-                'permissions' => $request->user()?->getAllPermissions()->pluck('name')->all() ?? [],
+                'user' => $user,
+                'permissions' => $user?->getAllPermissions()->pluck('name')->all() ?? [],
             ],
-            'flash' => [
-                'success' => fn () => $request->session()->get('success'),
-                'error' => fn () => $request->session()->get('error'),
-                'info' => fn () => $request->session()->get('info'),
-                'warning' => fn () => $request->session()->get('warning'),
-            ],
+            'flash' => Inertia::always([
+                'success' => $request->session()->get('success'),
+                'error' => $request->session()->get('error'),
+                'info' => $request->session()->get('info'),
+                'warning' => $request->session()->get('warning'),
+            ]),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
             'ui' => [
                 'locale' => app()->getLocale(),
@@ -64,7 +67,22 @@ class HandleInertiaRequests extends Middleware
                         [
                             'title' => 'Panel',
                             'href' => route('dashboard', absolute: false),
+                            'icon' => 'layout-dashboard',
                         ],
+                        ...($user?->can('system.roles.view') ? [
+                            [
+                                'title' => 'Roles',
+                                'href' => route('system.roles.index', absolute: false),
+                                'icon' => 'shield-check',
+                            ],
+                        ] : []),
+                        ...($user?->can('system.users.view') ? [
+                            [
+                                'title' => 'Usuarios',
+                                'href' => route('system.users.index', absolute: false),
+                                'icon' => 'users',
+                            ],
+                        ] : []),
                     ],
                     'starterPromoLinksRemoved' => true,
                 ],
@@ -81,6 +99,10 @@ class HandleInertiaRequests extends Middleware
                     [
                         'title' => 'Seguridad',
                         'href' => route('security.edit', absolute: false),
+                    ],
+                    [
+                        'title' => 'Acceso',
+                        'href' => route('settings.access', absolute: false),
                     ],
                     [
                         'title' => 'Apariencia',

@@ -157,9 +157,15 @@ function PaginationEllipsis({ className, ...props }: React.ComponentProps<"span"
  */
 function LaravelPagination({
   links,
+  from,
+  to,
+  total,
   className,
 }: {
   links: PaginatorLink[]
+  from?: number | null
+  to?: number | null
+  total?: number
   className?: string
 }) {
   // Laravel always includes prev + page numbers + next; filter out if only 3 items (1 page)
@@ -170,35 +176,42 @@ function LaravelPagination({
   const nextLink = links[links.length - 1]
 
   return (
-    <Pagination className={className}>
-      <PaginationContent>
-        <PaginationItem>
-          <PaginationPrevious href={prevLink.url ?? undefined} disabled={!prevLink.url} />
-        </PaginationItem>
+    <div className={cn("flex flex-col items-center gap-2 sm:flex-row sm:justify-between", className)}>
+      {from != null && to != null && total != null ? (
+        <p className="text-xs text-muted-foreground tabular-nums">
+          Mostrando {from}–{to} de {total} registros
+        </p>
+      ) : <span />}
+      <Pagination className="mx-0 w-auto">
+        <PaginationContent>
+          <PaginationItem>
+            <PaginationPrevious href={prevLink.url ?? undefined} disabled={!prevLink.url} />
+          </PaginationItem>
 
-        {pageLinks.map((link, index) => {
-          if (link.label === "...") {
+          {pageLinks.map((link, index) => {
+            if (link.label === "...") {
+              return (
+                <PaginationItem key={`ellipsis-${index}`} className="hidden sm:inline-flex">
+                  <PaginationEllipsis />
+                </PaginationItem>
+              )
+            }
+
             return (
-              <PaginationItem key={`ellipsis-${index}`} className="hidden sm:inline-flex">
-                <PaginationEllipsis />
+              <PaginationItem key={link.label} className="hidden sm:inline-flex">
+                <PaginationLink href={link.url ?? undefined} isActive={link.active}>
+                  {link.label}
+                </PaginationLink>
               </PaginationItem>
             )
-          }
+          })}
 
-          return (
-            <PaginationItem key={link.label} className="hidden sm:inline-flex">
-              <PaginationLink href={link.url ?? undefined} isActive={link.active}>
-                {link.label}
-              </PaginationLink>
-            </PaginationItem>
-          )
-        })}
-
-        <PaginationItem>
-          <PaginationNext href={nextLink.url ?? undefined} disabled={!nextLink.url} />
-        </PaginationItem>
-      </PaginationContent>
-    </Pagination>
+          <PaginationItem>
+            <PaginationNext href={nextLink.url ?? undefined} disabled={!nextLink.url} />
+          </PaginationItem>
+        </PaginationContent>
+      </Pagination>
+    </div>
   )
 }
 

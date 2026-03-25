@@ -6,16 +6,19 @@ use Database\Factories\UserFactory;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use OwenIt\Auditing\Contracts\Auditable;
+use Spatie\Permission\Models\Permission as SpatiePermission;
 use Spatie\Permission\Traits\HasRoles;
 
-#[Fillable(['name', 'email', 'password'])]
+#[Fillable(['name', 'email', 'password', 'is_active', 'display_name'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements Auditable, MustVerifyEmail
 {
@@ -45,6 +48,7 @@ class User extends Authenticatable implements Auditable, MustVerifyEmail
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
+            'is_active' => 'boolean',
         ];
     }
 
@@ -119,5 +123,81 @@ class User extends Authenticatable implements Auditable, MustVerifyEmail
         }
 
         return $this->removeRole('super-admin');
+    }
+
+    /**
+     * Scope a query to only include active users.
+     */
+    public function scopeActive(Builder $query): Builder
+    {
+        return $query->where('is_active', true);
+    }
+
+    /**
+     * Scope a query to only include inactive users.
+     */
+    public function scopeInactive(Builder $query): Builder
+    {
+        return $query->where('is_active', false);
+    }
+
+    /**
+     * Override A: Return all permissions the user has via roles, filtering out
+     * permissions from inactive roles.
+     *
+     * This powers getAllPermissions() → HandleInertiaRequests → auth.permissions
+     * frontend filtering. Without this, inactive-role permissions still appear in the UI.
+     *
+     * @return Collection<int, SpatiePermission>
+     */
+    public function getPermissionsViaRoles(): Collection
+    {
+        return $this->loadMissing([
+            'roles' => fn ($q) => $q->where('is_active', true),
+            'roles.permissions',
+        ])
+            ->roles
+            ->flatMap(fn ($role) => $role->permissions)
+            ->sort()
+            ->values();
+    }
+
+    /**
+     * Override B: Check if the user has the given permission via any active role.
+     *
+     * This powers hasPermissionTo() → Policies → Gate::authorize() backend enforcement.
+     * Without this, a user with only inactive roles can still pass permission checks.
+     */
+    protected function hasPermissionViaRole(SpatiePermission $permission): bool
+    {
+        return $this->hasRole(
+            $permission->roles->filter(fn ($role) => $role->is_active)
+        );
+    }
+
+    /**
+     * Determine if deactivating or deleting the given user would leave the system
+     * without any effective admin coverage.
+     *
+     * An "effective admin" is an active user (other than the target) holding at least
+     * one active role that grants system.users.view + system.users.assign-role +
+     * system.roles.view (minimum admin trio per PRD-05 §4.9).
+     *
+     * Keep isLastSuperAdmin() alongside for the boot-level deleting guard.
+     */
+    public static function isLastEffectiveAdmin(self $user): bool
+    {
+        $otherAdminExists = static::query()
+            ->where('id', '!=', $user->id)
+            ->where('is_active', true)
+            ->whereHas('roles', fn (Builder $q) => $q
+                ->where('is_active', true)
+                ->whereHas('permissions', fn (Builder $pq) => $pq->where('name', 'system.users.view'))
+                ->whereHas('permissions', fn (Builder $pq) => $pq->where('name', 'system.users.assign-role'))
+                ->whereHas('permissions', fn (Builder $pq) => $pq->where('name', 'system.roles.view'))
+            )
+            ->exists();
+
+        return ! $otherAdminExists;
     }
 }

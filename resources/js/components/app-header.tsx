@@ -26,6 +26,7 @@ import {
 import { UserMenuContent } from '@/components/user-menu-content';
 import { useCurrentUrl } from '@/hooks/use-current-url';
 import { useInitials } from '@/hooks/use-initials';
+import { resolveIcon } from '@/lib/system';
 import { cn } from '@/lib/utils';
 import { dashboard } from '@/routes';
 import type { BreadcrumbItem, NavItem, SharedUiProps, User } from '@/types';
@@ -47,7 +48,7 @@ export function AppHeader({ breadcrumbs = [] }: Props) {
     const { isCurrentUrl, whenCurrentUrl } = useCurrentUrl();
     const mainNavItems: NavItem[] = ui.navigation.items.map((item) => ({
         ...item,
-        icon: LayoutGrid,
+        icon: resolveIcon(item.icon) ?? LayoutGrid,
     }));
 
     return (

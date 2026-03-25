@@ -2,18 +2,24 @@ import { Transition } from '@headlessui/react';
 import { Form, Head } from '@inertiajs/react';
 import { ShieldCheck } from 'lucide-react';
 import { useRef, useState } from 'react';
+
 import SecurityController from '@/actions/App/Http/Controllers/Settings/SecurityController';
-import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
 import TwoFactorRecoveryCodes from '@/components/two-factor-recovery-codes';
 import TwoFactorSetupModal from '@/components/two-factor-setup-modal';
 import { Button } from '@/components/ui/button';
+import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
+} from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { useTwoFactorAuth } from '@/hooks/use-two-factor-auth';
 import AppLayout from '@/layouts/app-layout';
 import SettingsLayout from '@/layouts/settings/layout';
-import { edit } from '@/routes/security';
 import { disable, enable } from '@/routes/two-factor';
 import type { BreadcrumbItem } from '@/types';
 
@@ -26,7 +32,7 @@ type Props = {
 const breadcrumbs: BreadcrumbItem[] = [
     {
         title: 'Seguridad',
-        href: edit(),
+        href: SecurityController.edit(),
     },
 ];
 
@@ -57,132 +63,134 @@ export default function Security({
             <h1 className="sr-only">Configuración de seguridad</h1>
 
             <SettingsLayout>
-                <div className="space-y-6">
-                    <Heading
-                        variant="small"
-                        title="Actualizar contraseña"
-                        description="Usa una contraseña robusta y exclusiva para mantener tu cuenta protegida"
-                    />
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Actualizar contraseña</CardTitle>
+                        <CardDescription>
+                            Usa una contraseña robusta y exclusiva para mantener
+                            tu cuenta protegida
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <Form
+                            {...SecurityController.update.form()}
+                            options={{
+                                preserveScroll: true,
+                            }}
+                            resetOnError={[
+                                'password',
+                                'password_confirmation',
+                                'current_password',
+                            ]}
+                            resetOnSuccess
+                            onError={(errors) => {
+                                if (errors.password) {
+                                    passwordInput.current?.focus();
+                                }
 
-                    <Form
-                        {...SecurityController.update.form()}
-                        options={{
-                            preserveScroll: true,
-                        }}
-                        resetOnError={[
-                            'password',
-                            'password_confirmation',
-                            'current_password',
-                        ]}
-                        resetOnSuccess
-                        onError={(errors) => {
-                            if (errors.password) {
-                                passwordInput.current?.focus();
-                            }
+                                if (errors.current_password) {
+                                    currentPasswordInput.current?.focus();
+                                }
+                            }}
+                            className="space-y-4"
+                        >
+                            {({ errors, processing, recentlySuccessful }) => (
+                                <>
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="current_password">
+                                            Contraseña actual
+                                        </Label>
+                                        <PasswordInput
+                                            id="current_password"
+                                            ref={currentPasswordInput}
+                                            name="current_password"
+                                            autoComplete="current-password"
+                                            placeholder="Contraseña actual"
+                                        />
+                                        <InputError
+                                            message={errors.current_password}
+                                        />
+                                    </div>
 
-                            if (errors.current_password) {
-                                currentPasswordInput.current?.focus();
-                            }
-                        }}
-                        className="space-y-6"
-                    >
-                        {({ errors, processing, recentlySuccessful }) => (
-                            <>
-                                <div className="grid gap-2">
-                                    <Label htmlFor="current_password">
-                                        Contraseña actual
-                                    </Label>
+                                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="password">
+                                                Nueva contraseña
+                                            </Label>
+                                            <PasswordInput
+                                                id="password"
+                                                ref={passwordInput}
+                                                name="password"
+                                                autoComplete="new-password"
+                                                placeholder="Nueva contraseña"
+                                            />
+                                            <InputError
+                                                message={errors.password}
+                                            />
+                                        </div>
 
-                                    <PasswordInput
-                                        id="current_password"
-                                        ref={currentPasswordInput}
-                                        name="current_password"
-                                        className="mt-1 block w-full"
-                                        autoComplete="current-password"
-                                        placeholder="Contraseña actual"
-                                    />
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="password_confirmation">
+                                                Confirmar contraseña
+                                            </Label>
+                                            <PasswordInput
+                                                id="password_confirmation"
+                                                name="password_confirmation"
+                                                autoComplete="new-password"
+                                                placeholder="Confirma tu contraseña"
+                                            />
+                                            <InputError
+                                                message={
+                                                    errors.password_confirmation
+                                                }
+                                            />
+                                        </div>
+                                    </div>
 
-                                    <InputError
-                                        message={errors.current_password}
-                                    />
-                                </div>
+                                    <div className="flex items-center gap-4 pt-2">
+                                        <Button
+                                            disabled={processing}
+                                            data-test="update-password-button"
+                                        >
+                                            Guardar contraseña
+                                        </Button>
 
-                                <div className="grid gap-2">
-                                    <Label htmlFor="password">
-                                        Nueva contraseña
-                                    </Label>
-
-                                    <PasswordInput
-                                        id="password"
-                                        ref={passwordInput}
-                                        name="password"
-                                        className="mt-1 block w-full"
-                                        autoComplete="new-password"
-                                        placeholder="Nueva contraseña"
-                                    />
-
-                                    <InputError message={errors.password} />
-                                </div>
-
-                                <div className="grid gap-2">
-                                    <Label htmlFor="password_confirmation">
-                                        Confirmar contraseña
-                                    </Label>
-
-                                    <PasswordInput
-                                        id="password_confirmation"
-                                        name="password_confirmation"
-                                        className="mt-1 block w-full"
-                                        autoComplete="new-password"
-                                        placeholder="Confirma tu contraseña"
-                                    />
-
-                                    <InputError
-                                        message={errors.password_confirmation}
-                                    />
-                                </div>
-
-                                <div className="flex items-center gap-4">
-                                    <Button
-                                        disabled={processing}
-                                        data-test="update-password-button"
-                                    >
-                                        Guardar contraseña
-                                    </Button>
-
-                                    <Transition
-                                        show={recentlySuccessful}
-                                        enter="transition ease-in-out"
-                                        enterFrom="opacity-0"
-                                        leave="transition ease-in-out"
-                                        leaveTo="opacity-0"
-                                    >
-                                        <p className="text-sm text-neutral-600">
-                                            Guardado
-                                        </p>
-                                    </Transition>
-                                </div>
-                            </>
-                        )}
-                    </Form>
-                </div>
+                                        <Transition
+                                            show={recentlySuccessful}
+                                            enter="transition ease-in-out"
+                                            enterFrom="opacity-0"
+                                            leave="transition ease-in-out"
+                                            leaveTo="opacity-0"
+                                        >
+                                            <p className="text-sm text-emerald-600 dark:text-emerald-400">
+                                                Guardado
+                                            </p>
+                                        </Transition>
+                                    </div>
+                                </>
+                            )}
+                        </Form>
+                    </CardContent>
+                </Card>
 
                 {canManageTwoFactor && (
-                    <div className="space-y-6">
-                        <Heading
-                            variant="small"
-                            title="Autenticación en dos pasos"
-                            description="Administra tu configuración de verificación adicional"
-                        />
-                        {twoFactorEnabled ? (
-                            <div className="flex flex-col items-start justify-start space-y-4">
-                                <p className="text-sm text-muted-foreground">
-                                    Durante el inicio de sesión se te solicitará
-                                    un código temporal generado por tu
-                                    aplicación autenticadora.
-                                </p>
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Autenticación en dos pasos</CardTitle>
+                            <CardDescription>
+                                Administra tu configuración de verificación
+                                adicional
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            {twoFactorEnabled ? (
+                                <div className="flex flex-col items-start space-y-4">
+                                    <p className="text-sm text-muted-foreground">
+                                        Durante el inicio de sesión se te
+                                        solicitará un código temporal generado
+                                        por tu aplicación autenticadora.
+                                    </p>
 
-                                <div className="relative inline">
                                     <Form {...disable.form()}>
                                         {({ processing }) => (
                                             <Button
@@ -194,65 +202,66 @@ export default function Security({
                                             </Button>
                                         )}
                                     </Form>
+
+                                    <TwoFactorRecoveryCodes
+                                        recoveryCodesList={recoveryCodesList}
+                                        fetchRecoveryCodes={fetchRecoveryCodes}
+                                        errors={errors}
+                                    />
                                 </div>
+                            ) : (
+                                <div className="flex flex-col items-start space-y-4">
+                                    <p className="text-sm text-muted-foreground">
+                                        Cuando actives la autenticación en dos
+                                        pasos, necesitarás un código temporal
+                                        desde una aplicación compatible con
+                                        TOTP.
+                                    </p>
 
-                                <TwoFactorRecoveryCodes
-                                    recoveryCodesList={recoveryCodesList}
-                                    fetchRecoveryCodes={fetchRecoveryCodes}
-                                    errors={errors}
-                                />
-                            </div>
-                        ) : (
-                            <div className="flex flex-col items-start justify-start space-y-4">
-                                <p className="text-sm text-muted-foreground">
-                                    Cuando actives la autenticación en dos
-                                    pasos, necesitarás un código temporal desde
-                                    una aplicación compatible con TOTP.
-                                </p>
-
-                                <div>
-                                    {hasSetupData ? (
-                                        <Button
-                                            onClick={() =>
-                                                setShowSetupModal(true)
-                                            }
-                                        >
-                                            <ShieldCheck />
-                                            Continuar configuración
-                                        </Button>
-                                    ) : (
-                                        <Form
-                                            {...enable.form()}
-                                            onSuccess={() =>
-                                                setShowSetupModal(true)
-                                            }
-                                        >
-                                            {({ processing }) => (
-                                                <Button
-                                                    type="submit"
-                                                    disabled={processing}
-                                                >
-                                                    Activar 2FA
-                                                </Button>
-                                            )}
-                                        </Form>
-                                    )}
+                                    <div>
+                                        {hasSetupData ? (
+                                            <Button
+                                                onClick={() =>
+                                                    setShowSetupModal(true)
+                                                }
+                                            >
+                                                <ShieldCheck className="size-4" />
+                                                Continuar configuración
+                                            </Button>
+                                        ) : (
+                                            <Form
+                                                {...enable.form()}
+                                                onSuccess={() =>
+                                                    setShowSetupModal(true)
+                                                }
+                                            >
+                                                {({ processing }) => (
+                                                    <Button
+                                                        type="submit"
+                                                        disabled={processing}
+                                                    >
+                                                        Activar 2FA
+                                                    </Button>
+                                                )}
+                                            </Form>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            )}
 
-                        <TwoFactorSetupModal
-                            isOpen={showSetupModal}
-                            onClose={() => setShowSetupModal(false)}
-                            requiresConfirmation={requiresConfirmation}
-                            twoFactorEnabled={twoFactorEnabled}
-                            qrCodeSvg={qrCodeSvg}
-                            manualSetupKey={manualSetupKey}
-                            clearSetupData={clearSetupData}
-                            fetchSetupData={fetchSetupData}
-                            errors={errors}
-                        />
-                    </div>
+                            <TwoFactorSetupModal
+                                isOpen={showSetupModal}
+                                onClose={() => setShowSetupModal(false)}
+                                requiresConfirmation={requiresConfirmation}
+                                twoFactorEnabled={twoFactorEnabled}
+                                qrCodeSvg={qrCodeSvg}
+                                manualSetupKey={manualSetupKey}
+                                clearSetupData={clearSetupData}
+                                fetchSetupData={fetchSetupData}
+                                errors={errors}
+                            />
+                        </CardContent>
+                    </Card>
                 )}
             </SettingsLayout>
         </AppLayout>

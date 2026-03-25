@@ -7,8 +7,11 @@ use App\Listeners\RecordLogout;
 use App\Listeners\RecordRoleAssigned;
 use App\Listeners\RecordRoleRevoked;
 use App\Listeners\RecordSuccessfulLogin;
+use App\Models\Role;
 use App\Models\User;
 use App\Observers\TwoFactorAuditObserver;
+use App\Policies\PermissionPolicy;
+use App\Policies\RolePolicy;
 use App\Policies\UserPolicy;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Events\Failed;
@@ -22,6 +25,7 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 use Spatie\Permission\Events\RoleAttachedEvent;
 use Spatie\Permission\Events\RoleDetachedEvent;
+use Spatie\Permission\Models\Permission;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -54,14 +58,18 @@ class AppServiceProvider extends ServiceProvider
             app()->isProduction(),
         );
 
-        Password::defaults(fn (): ?Password => app()->isProduction()
-            ? Password::min(12)
-                ->mixedCase()
+        Password::defaults(fn (): Password => app()->isProduction()
+            ? Password::min(8)
                 ->letters()
+                ->mixedCase()
                 ->numbers()
                 ->symbols()
                 ->uncompromised()
-            : null,
+            : Password::min(8)
+                ->letters()
+                ->mixedCase()
+                ->numbers()
+                ->symbols(),
         );
     }
 
@@ -76,6 +84,8 @@ class AppServiceProvider extends ServiceProvider
     protected function configurePolicies(): void
     {
         Gate::policy(User::class, UserPolicy::class);
+        Gate::policy(Role::class, RolePolicy::class);
+        Gate::policy(Permission::class, PermissionPolicy::class);
     }
 
     /**

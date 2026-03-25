@@ -28,29 +28,39 @@ export function FlashToaster() {
 
     useEffect(() => {
         const prev = prevRef.current;
+        let fired = false;
 
         if (flash?.success && flash.success !== prev.success) {
             toast.success(flash.success);
+            fired = true;
         }
 
         if (flash?.error && flash.error !== prev.error) {
             toast.error(flash.error);
+            fired = true;
         }
 
         if (flash?.info && flash.info !== prev.info) {
             toast.info(flash.info);
+            fired = true;
         }
 
         if (flash?.warning && flash.warning !== prev.warning) {
             toast.warning(flash.warning);
+            fired = true;
         }
 
-        prevRef.current = {
-            success: flash?.success ?? null,
-            error: flash?.error ?? null,
-            info: flash?.info ?? null,
-            warning: flash?.warning ?? null,
-        };
+        // After firing, reset to null so repeated identical messages on
+        // subsequent visits will still trigger. The useEffect dependency
+        // array prevents double-firing within the same render cycle.
+        prevRef.current = fired
+            ? { success: null, error: null, info: null, warning: null }
+            : {
+                  success: flash?.success ?? null,
+                  error: flash?.error ?? null,
+                  info: flash?.info ?? null,
+                  warning: flash?.warning ?? null,
+              };
     }, [flash?.success, flash?.error, flash?.info, flash?.warning]);
 
     return null;

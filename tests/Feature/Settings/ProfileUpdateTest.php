@@ -15,7 +15,8 @@ test('profile page is displayed', function () {
             ->where('ui.settingsSection.title', 'Configuración')
             ->where('ui.settingsNavigation.0.title', 'Perfil')
             ->where('ui.settingsNavigation.1.title', 'Seguridad')
-            ->where('ui.settingsNavigation.2.title', 'Apariencia')
+            ->where('ui.settingsNavigation.2.title', 'Acceso')
+            ->where('ui.settingsNavigation.3.title', 'Apariencia')
             ->where('canDeleteAccount', false),
         );
 });

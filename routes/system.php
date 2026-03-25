@@ -1,0 +1,40 @@
+<?php
+
+use App\Http\Controllers\System\PermissionController;
+use App\Http\Controllers\System\RoleActivateController;
+use App\Http\Controllers\System\RoleController;
+use App\Http\Controllers\System\RoleDeactivateController;
+use App\Http\Controllers\System\UserController;
+use App\Http\Controllers\System\Users\ActivateUserController;
+use App\Http\Controllers\System\Users\BulkDeactivateUsersController;
+use App\Http\Controllers\System\Users\DeactivateUserController;
+use App\Http\Controllers\System\Users\ExportUsersController;
+use App\Http\Controllers\System\Users\SendPasswordResetController;
+use App\Http\Controllers\System\Users\SyncUserRolesController;
+use Illuminate\Support\Facades\Route;
+
+Route::middleware(['auth', 'verified', 'ensure-two-factor'])->prefix('system')->name('system.')->group(function () {
+    // ── Users ────────────────────────────────────────────────────────────────
+    // IMPORTANT: export and bulk routes MUST be registered BEFORE the resource
+    // to prevent Laravel from binding them as {user} parameter segments.
+
+    Route::get('users/export', ExportUsersController::class)->name('users.export');
+    Route::post('users/bulk', BulkDeactivateUsersController::class)->name('users.bulk');
+
+    Route::resource('users', UserController::class);
+
+    Route::patch('users/{user}/deactivate', DeactivateUserController::class)->name('users.deactivate');
+    Route::patch('users/{user}/activate', ActivateUserController::class)->name('users.activate');
+    Route::put('users/{user}/roles', SyncUserRolesController::class)->name('users.roles.sync');
+    Route::post('users/{user}/send-reset', SendPasswordResetController::class)->name('users.send-reset');
+
+    // ── Roles ─────────────────────────────────────────────────────────────────
+    Route::resource('roles', RoleController::class);
+
+    Route::patch('roles/{role}/deactivate', RoleDeactivateController::class)->name('roles.deactivate');
+    Route::patch('roles/{role}/activate', RoleActivateController::class)->name('roles.activate');
+
+    // ── Permissions (read-only catalog) ───────────────────────────────────────
+    Route::get('permissions', [PermissionController::class, 'index'])->name('permissions.index');
+    Route::get('permissions/{permission}', [PermissionController::class, 'show'])->name('permissions.show');
+});

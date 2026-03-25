@@ -4,11 +4,14 @@ namespace App\Providers;
 
 use App\Actions\Fortify\CreateNewUser;
 use App\Actions\Fortify\ResetUserPassword;
+use App\Models\User;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
 use Laravel\Fortify\Fortify;
@@ -40,6 +43,26 @@ class FortifyServiceProvider extends ServiceProvider
     {
         Fortify::resetUserPasswordsUsing(ResetUserPassword::class);
         Fortify::createUsersUsing(CreateNewUser::class);
+
+        Fortify::authenticateUsing(function (Request $request) {
+            $user = User::query()
+                ->where(Str::lower(Fortify::username()), Str::lower($request->input(Fortify::username())))
+                ->first();
+
+            // Unknown user or wrong password — return null (prevents user enumeration)
+            if ($user === null || ! Hash::check($request->input('password'), $user->password)) {
+                return null;
+            }
+
+            // Correct credentials but account is deactivated — surface a clear message
+            if (! $user->is_active) {
+                throw ValidationException::withMessages([
+                    Fortify::username() => [__('Tu cuenta está desactivada. Contacta al administrador del sistema.')],
+                ]);
+            }
+
+            return $user;
+        });
     }
 
     /**

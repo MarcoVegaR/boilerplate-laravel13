@@ -14,6 +14,7 @@ class DatabaseSeeder extends Seeder
     {
         // Roles and permissions are seeded in all environments
         $this->call(RolesAndPermissionsSeeder::class);
+        $this->call(AccessModulePermissionsSeeder::class);
 
         if (! in_array((string) config('app.env'), ['local', 'testing'], true)) {
             return;
@@ -29,5 +30,9 @@ class DatabaseSeeder extends Seeder
 
         // Assign super-admin role to local admin user (idempotent)
         $admin->assignRole('super-admin');
+
+        // Test data seeders — separate from core seeders
+        $this->call(TestRolesSeeder::class);
+        $this->call(TestUsersSeeder::class);
     }
 }

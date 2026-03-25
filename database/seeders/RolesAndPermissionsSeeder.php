@@ -41,11 +41,17 @@ class RolesAndPermissionsSeeder extends Seeder
         foreach (self::BASELINE_PERMISSIONS as $permission) {
             PermissionName::assertValid($permission);
 
-            Permission::firstOrCreate(['name' => $permission, 'guard_name' => 'web']);
+            Permission::firstOrCreate(
+                ['name' => $permission, 'guard_name' => 'web'],
+                ['is_active' => true],
+            );
         }
 
         // Upsert super-admin role
-        $superAdmin = Role::firstOrCreate(['name' => 'super-admin', 'guard_name' => 'web']);
+        $superAdmin = Role::firstOrCreate(
+            ['name' => 'super-admin', 'guard_name' => 'web'],
+            ['is_active' => true, 'display_name' => 'Super Administrador'],
+        );
 
         // Sync ALL defined permissions to super-admin explicitly (no Gate::before bypass)
         $superAdmin->syncPermissions(Permission::all());

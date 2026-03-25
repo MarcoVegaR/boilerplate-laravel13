@@ -1,16 +1,17 @@
 import { Head, usePage } from '@inertiajs/react';
+
 import AppearanceTabs from '@/components/appearance-tabs';
-import Heading from '@/components/heading';
+import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
+} from '@/components/ui/card';
 import AppLayout from '@/layouts/app-layout';
 import SettingsLayout from '@/layouts/settings/layout';
 import { edit as editAppearance } from '@/routes/appearance';
 import type { BreadcrumbItem, SharedUiProps } from '@/types';
-
-const appearanceContent = {
-    title: 'Apariencia',
-    description:
-        'Elige cómo deseas ver la interfaz corporativa con la paleta violeta predeterminada.',
-} as const;
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -29,17 +30,21 @@ export default function Appearance() {
             <h1 className="sr-only">Configuración de apariencia</h1>
 
             <SettingsLayout>
-                <div className="space-y-6">
-                    <Heading
-                        variant="small"
-                        title={appearanceContent.title}
-                        description={appearanceContent.description}
-                    />
-                    <AppearanceTabs
-                        supportedModes={ui.appearance.supportedModes}
-                        labels={ui.appearance.labels}
-                    />
-                </div>
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Apariencia</CardTitle>
+                        <CardDescription>
+                            Elige cómo deseas ver la interfaz corporativa con la
+                            paleta violeta predeterminada.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <AppearanceTabs
+                            supportedModes={ui.appearance.supportedModes}
+                            labels={ui.appearance.labels}
+                        />
+                    </CardContent>
+                </Card>
             </SettingsLayout>
         </AppLayout>
     );
