@@ -1,7 +1,10 @@
 <?php
 
 use App\Models\User;
+use Database\Seeders\AccessModulePermissionsSeeder;
+use Database\Seeders\AuditModulePermissionsSeeder;
 use Database\Seeders\DatabaseSeeder;
+use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -26,17 +29,44 @@ test('database seeder keeps deterministic administrator scoped to development en
     expect(User::query()->where('email', 'test@mailinator.com')->count())->toBe(0);
 });
 
-test('database seeder creates expected super-admin role and 14 permissions', function () {
+test('database seeder creates expected super-admin role and 16 permissions', function () {
     $this->seed(DatabaseSeeder::class);
 
     expect(Role::where('name', 'super-admin')->exists())->toBeTrue()
-        ->and(Permission::count())->toBe(14);
+        ->and(Permission::count())->toBe(16);
 });
 
-test('repeated database seeder run preserves exactly 1 role and 14 permissions without duplicates', function () {
+test('repeated database seeder run preserves exactly 1 role and 16 permissions without duplicates', function () {
     $this->seed(DatabaseSeeder::class);
     $this->seed(DatabaseSeeder::class);
 
     expect(Role::where('name', 'super-admin')->count())->toBe(1)
-        ->and(Permission::count())->toBe(14);
+        ->and(Permission::count())->toBe(16);
+});
+
+test('database seeder keeps the core call order including the audit module seeder', function () {
+    config(['app.env' => 'production']);
+
+    $seeder = new class extends DatabaseSeeder
+    {
+        /**
+         * @var array<int, string>
+         */
+        public array $calls = [];
+
+        public function call($class, $silent = false, array $parameters = [])
+        {
+            $this->calls[] = (string) $class;
+
+            return $this;
+        }
+    };
+
+    $seeder->run();
+
+    expect($seeder->calls)->toBe([
+        RolesAndPermissionsSeeder::class,
+        AccessModulePermissionsSeeder::class,
+        AuditModulePermissionsSeeder::class,
+    ]);
 });

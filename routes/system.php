@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\System\AuditController;
+use App\Http\Controllers\System\AuditExportController;
 use App\Http\Controllers\System\PermissionController;
 use App\Http\Controllers\System\RoleActivateController;
 use App\Http\Controllers\System\RoleController;
@@ -33,6 +35,14 @@ Route::middleware(['auth', 'verified', 'ensure-two-factor'])->prefix('system')->
 
     Route::patch('roles/{role}/deactivate', RoleDeactivateController::class)->name('roles.deactivate');
     Route::patch('roles/{role}/activate', RoleActivateController::class)->name('roles.activate');
+
+    // ── Audit viewer (read-only) ────────────────────────────────────────────────
+    Route::get('audit/export', AuditExportController::class)->name('audit.export');
+    Route::get('audit/{source}/{id}', [AuditController::class, 'show'])
+        ->whereNumber('id')
+        ->whereIn('source', ['model', 'security'])
+        ->name('audit.show');
+    Route::get('audit', [AuditController::class, 'index'])->name('audit.index');
 
     // ── Permissions (read-only catalog) ───────────────────────────────────────
     Route::get('permissions', [PermissionController::class, 'index'])->name('permissions.index');

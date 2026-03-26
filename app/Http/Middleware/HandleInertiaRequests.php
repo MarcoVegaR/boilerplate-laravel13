@@ -83,6 +83,13 @@ class HandleInertiaRequests extends Middleware
                                 'icon' => 'users',
                             ],
                         ] : []),
+                        ...($user?->can('system.audit.view') ? [
+                            [
+                                'title' => 'Auditoría',
+                                'href' => route('system.audit.index', absolute: false),
+                                'icon' => 'scroll-text',
+                            ],
+                        ] : []),
                     ],
                     'starterPromoLinksRemoved' => true,
                 ],

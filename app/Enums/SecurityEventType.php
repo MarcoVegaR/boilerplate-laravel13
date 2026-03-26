@@ -27,4 +27,29 @@ enum SecurityEventType: string
     case RoleActivated = 'role_activated';
     case RoleDeleted = 'role_deleted';
     case PermissionsSynced = 'permissions_synced';
+
+    public function label(): string
+    {
+        return match ($this) {
+            self::LoginSuccess => 'Inicio de sesión',
+            self::LoginFailed => 'Intento de sesión fallido',
+            self::Logout => 'Cierre de sesión',
+            self::TwoFactorEnabled => '2FA habilitado',
+            self::TwoFactorDisabled => '2FA deshabilitado',
+            self::RoleAssigned => 'Rol asignado',
+            self::RoleRevoked => 'Rol revocado',
+            self::RoleCreated => 'Rol creado',
+            self::RoleUpdated => 'Rol actualizado',
+            self::RoleDeactivated => 'Rol desactivado',
+            self::RoleActivated => 'Rol activado',
+            self::RoleDeleted => 'Rol eliminado',
+            self::PermissionsSynced => 'Permisos sincronizados',
+            self::UserCreated => 'Usuario creado',
+            self::UserUpdated => 'Usuario actualizado',
+            self::UserDeactivated => 'Usuario desactivado',
+            self::UserActivated => 'Usuario activado',
+            self::UserDeleted => 'Usuario eliminado',
+            self::PasswordResetSent => 'Restablecimiento enviado',
+        };
+    }
 }

@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import AuthLayout from '@/layouts/auth-layout';
 import { forgotPasswordContent } from '@/pages/auth/content';
 import { login } from '@/routes';
-import { email } from '@/routes/password';
+import { email } from '@/routes/password/index';
 
 type Props = {
     status?: string;

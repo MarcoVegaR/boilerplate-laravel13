@@ -9,8 +9,8 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import AuthLayout from '@/layouts/auth-layout';
 import { loginContent } from '@/pages/auth/content';
-import { store } from '@/routes/login';
-import { request } from '@/routes/password';
+import { store } from '@/routes/login/index';
+import { request } from '@/routes/password/index';
 
 type Props = {
     status?: string;
