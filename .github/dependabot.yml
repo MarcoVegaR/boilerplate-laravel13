@@ -1,13 +1,84 @@
 version: 2
+
 updates:
   - package-ecosystem: composer
     directory: '/'
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+      day: monday
+      time: '08:00'
+      timezone: America/Mexico_City
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - php
+    commit-message:
+      prefix: build(deps)
+    groups:
+      laravel-core:
+        patterns:
+          - laravel/*
+      testing:
+        patterns:
+          - pestphp/*
+          - phpunit/*
+          - brianium/paratest
+      php-minor-patch:
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: npm
     directory: '/'
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+      day: tuesday
+      time: '08:00'
+      timezone: America/Mexico_City
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - javascript
+    commit-message:
+      prefix: build(deps)
+    groups:
+      frontend-safe:
+        patterns:
+          - '@inertiajs/*'
+          - '@tailwindcss/*'
+          - tailwindcss
+          - prettier
+          - prettier-plugin-tailwindcss
+          - lucide-react
+        update-types:
+          - minor
+          - patch
+      tooling-safe:
+        patterns:
+          - typescript
+          - typescript-eslint
+          - playwright
+        update-types:
+          - minor
+          - patch
+    ignore:
+      - dependency-name: vite
+        update-types:
+          - version-update:semver-major
+      - dependency-name: '@vitejs/plugin-react'
+        update-types:
+          - version-update:semver-major
+      - dependency-name: eslint
+        update-types:
+          - version-update:semver-major
+      - dependency-name: '@eslint/js'
+        update-types:
+          - version-update:semver-major
+      - dependency-name: '@types/node'
+        update-types:
+          - version-update:semver-major
+      - dependency-name: globals
+        update-types:
+          - version-update:semver-major
+      - dependency-name: '@rollup/rollup-linux-x64-gnu'
+      - dependency-name: '@rollup/rollup-win32-x64-msvc'
