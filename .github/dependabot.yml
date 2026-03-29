@@ -27,6 +27,13 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      - dependency-name: inertiajs/inertia-laravel
+        update-types:
+          - version-update:semver-major
+      - dependency-name: laravel/ai
+        update-types:
+          - version-update:semver-minor
 
   - package-ecosystem: npm
     directory: '/'
@@ -62,6 +69,9 @@ updates:
           - minor
           - patch
     ignore:
+      - dependency-name: '@inertiajs/react'
+        update-types:
+          - version-update:semver-major
       - dependency-name: vite
         update-types:
           - version-update:semver-major
