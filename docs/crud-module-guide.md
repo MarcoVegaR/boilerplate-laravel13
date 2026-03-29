@@ -4,6 +4,173 @@ This guide defines the conventions for building new administrative CRUD modules 
 
 For the architectural decisions behind these conventions, see [ADR-009](./adr/ADR-009-crud-module-standard.md).
 
+## PRD-07 Phase-1 Scaffold Baseline
+
+PRD-07 freezes a bounded but useful phase-1 generator contract for `php artisan make:scaffold`.
+
+### Writable baseline guaranteed by the generator
+
+- model
+- migration
+- factory
+- controller
+- store request
+- update request
+- policy
+- module permissions seeder
+- module route file
+- Inertia `index`, `create`, `edit`, and `show` pages
+- shared form component
+- module TypeScript types
+- five Pest files
+
+### Read-only baseline guaranteed by the generator
+
+- route file with `index` + `show`
+- read-only controller
+- read-only policy
+- Inertia `index` + `show`
+- module TypeScript types
+- five Pest files adapted to browse/detail behavior
+
+Catalog-only or index-only modules are intentionally out of phase-1 scope.
+
+### Canonical CLI contract
+
+The only supported phase-1 field contract is repeated `--field` entries:
+
+```bash
+php artisan make:scaffold system Customer \
+  --resource=customers \
+  --field=name:string:required:list:search:sort \
+  --field=status:select[draft|published]:required:list \
+  --field=price:decimal:nullable:list:sort
+```
+
+- `--field={name}:{type}[:flag[:flag...]]`
+- supported types: `string`, `text`, `integer`, `decimal`, `boolean`, `date`, `datetime`, `email`, `select[...]`
+- supported flags: `required`, `nullable`, `list`, `search`, `sort`
+- aggregate alternatives like `--fields=...`, JSON blobs, or custom config files are unsupported in phase 1
+
+### Complete scaffold examples
+
+#### Example A — writable billing module
+
+```bash
+php artisan make:scaffold billing Invoice \
+  --resource=invoices \
+  --field=number:string:required:list:search:sort \
+  --field=status:select[draft|sent|paid|void]:required:list:sort \
+  --field=customer_email:email:required:search \
+  --field=issued_at:date:required:list:sort \
+  --field=total:decimal:required:list:sort \
+  --index-default=issued_at:desc \
+  --per-page=25 \
+  --nav-label="Invoices" \
+  --nav-icon="file-text"
+```
+
+Generator-owned output for this writable baseline:
+
+- `routes/billing.php`
+- `app/Models/Invoice.php`
+- `app/Http/Controllers/Billing/InvoiceController.php`
+- `app/Http/Requests/Billing/StoreInvoiceRequest.php`
+- `app/Http/Requests/Billing/UpdateInvoiceRequest.php`
+- `app/Policies/InvoicePolicy.php`
+- `database/factories/InvoiceFactory.php`
+- `database/migrations/...create_invoices_table.php`
+- `database/seeders/BillingPermissionsSeeder.php`
+- `resources/js/pages/billing/invoices/index.tsx`
+- `resources/js/pages/billing/invoices/create.tsx`
+- `resources/js/pages/billing/invoices/edit.tsx`
+- `resources/js/pages/billing/invoices/show.tsx`
+- `resources/js/pages/billing/invoices/components/invoice-form.tsx`
+- `resources/js/types/billing.d.ts`
+- five baseline Pest files for list/create/update/delete/authorization
+
+Human-owned follow-up after generation:
+
+1. register `routes/billing.php` in `routes/web.php`
+2. register `BillingPermissionsSeeder` in `database/seeders/DatabaseSeeder.php`
+3. run `php artisan wayfinder:generate --with-form --no-interaction`
+4. optionally wire the suggested navigation item in `app/Http/Middleware/HandleInertiaRequests.php`
+5. finish domain copy, labels, richer rules, relationships, and any billing-specific behavior
+
+#### Example B — read-only system module
+
+```bash
+php artisan make:scaffold system AuditRecord \
+  --resource=audit-records \
+  --field=event:string:required:list:search:sort \
+  --field=actor_email:email:nullable:list:search \
+  --field=occurred_at:datetime:required:list:sort \
+  --read-only \
+  --index-default=occurred_at:desc \
+  --per-page=50
+```
+
+Read-only generation keeps only the browse + detail contract:
+
+- routes: `index`, `show`
+- backend: read-only controller + read-only policy
+- frontend: `index.tsx` + `show.tsx`
+- tests: browse/detail authorization coverage
+
+It does **not** generate `create`, `edit`, mutating requests, shared writable form UI, or delete flows.
+
+### Manual integration contract
+
+Successful generation does **not** finish shared-project wiring. Maintainers must still:
+
+1. register the generated route file in `routes/web.php`
+2. register the generated permissions seeder in `database/seeders/DatabaseSeeder.php`
+3. run `php artisan wayfinder:generate --with-form --no-interaction`
+4. optionally add navigation to `app/Http/Middleware/HandleInertiaRequests.php`
+5. complete domain-specific TODOs, labels, relationships, business rules, and richer validation
+
+### Verification-ready definition
+
+PRD-07 defines verification-ready as follows: after the documented manual integration steps above, generator-owned files should be structurally correct and should not require manual structural repair. If generated structure is broken after those steps, that is a generator defect.
+
+### Deferred capabilities
+
+The following capabilities are explicitly deferred beyond phase 1:
+
+- lifecycle generators (`restore`, `force-delete`, `view-trashed`)
+- bulk actions
+- export scaffolds
+- relationship-aware field schemas
+- rich filter DSLs
+- dynamic navigation registry
+- transversal CRUD abstractions
+
+### What the generator does not solve
+
+`make:scaffold` is a structural accelerator, not a complete module authoring system.
+
+It does **not** solve or auto-complete the following:
+
+- shared-file integration: it does not edit `routes/web.php`, `database/seeders/DatabaseSeeder.php`, or `app/Http/Middleware/HandleInertiaRequests.php`
+- advanced capability scaffolds: lifecycle generators, bulk actions, exports, relationship-aware schemas, rich filters, and dynamic navigation remain outside the phase-1 guarantee
+- domain modeling: relationships, business invariants, custom policies beyond the baseline CRUD contract, contextual creation rules, and advanced validation remain human-owned
+- UI/product refinement: labels, copy, empty states, table ergonomics, custom inputs, async selects, and module-specific UX polish remain human-owned
+- verification shortcuts: generation success does not mean app integration is finished; maintainers still need the documented manual integration and focused verification flow
+
+### Maturity inventory
+
+| Layer                                                | Status      | Notes                                         |
+| ---------------------------------------------------- | ----------- | --------------------------------------------- |
+| CRUD security-by-layers pattern                      | Stable      | Backed by real system modules and tests       |
+| Inertia + Wayfinder writable/read-only page baseline | Stable      | Used by roles, users, permissions, and audit  |
+| `make:scaffold` phase-1 generator                    | Provisional | Generator exists and is intentionally bounded |
+| Lifecycle/export/bulk generator features             | Deferred    | Not part of the generator guarantee           |
+| Shared transversal CRUD abstractions                 | Deferred    | Blocked by the rule of three                  |
+
+### Governance: rule of three
+
+Use scaffold automation for repetitive structure. Do **not** extract shared CRUD runtimes, helpers, traits, or advanced generators until three real modules demonstrate the same cross-cutting need.
+
 ---
 
 ## Table of Contents

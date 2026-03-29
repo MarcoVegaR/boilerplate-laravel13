@@ -1,8 +1,11 @@
 # ADR-008: Queue and Scheduler Policy
 
-**Status**: Accepted  
+**Status**: Vigente  
 **Date**: 2026-03-21  
-**Authors**: Caracoders Engineering  
+**Authors**: Caracoders Engineering
+
+**Originating PRD**: PRD-03, reconciled by PRD-07  
+**Implementation references**: `routes/console.php`, `composer.json`, `phpunit.xml`, `bootstrap/app.php`
 
 ---
 
@@ -24,6 +27,7 @@ A task MUST be dispatched as a queued job when ANY of the following apply:
 - The operation should not block the user's response cycle.
 
 A task MUST NOT be queued when:
+
 - It is a simple synchronous validation or database read.
 - It requires an immediate response value (synchronous returns).
 - It is an in-memory-only computation.
@@ -66,10 +70,10 @@ All scheduled tasks that are NOT idempotent under concurrent execution MUST use 
 
 The following tasks are registered in `routes/console.php`:
 
-| Command | Schedule | `withoutOverlapping` | Purpose |
-|---------|----------|---------------------|---------|
-| `queue:prune-failed --hours=168` | Daily | ✅ Yes | Remove failed jobs older than 7 days |
-| `model:prune` | Daily | ✅ Yes | Prune Eloquent Prunable models |
+| Command                          | Schedule | `withoutOverlapping` | Purpose                              |
+| -------------------------------- | -------- | -------------------- | ------------------------------------ |
+| `queue:prune-failed --hours=168` | Daily    | ✅ Yes               | Remove failed jobs older than 7 days |
+| `model:prune`                    | Daily    | ✅ Yes               | Prune Eloquent Prunable models       |
 
 ### Queue connection baseline
 

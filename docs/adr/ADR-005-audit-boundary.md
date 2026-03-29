@@ -1,8 +1,11 @@
 # ADR-005: Audit Boundary — Dual-Layer Auditing Strategy
 
-**Status**: Accepted  
+**Status**: Vigente  
 **Date**: 2026-03-21  
-**Authors**: Caracoders Engineering  
+**Authors**: Caracoders Engineering
+
+**Originating PRD**: PRD-03, reconciled by PRD-07  
+**Implementation references**: `app/Models/User.php`, `app/Models/Role.php`, `app/Models/Permission.php`, `app/Services/SecurityAuditService.php`, `app/Observers/TwoFactorAuditObserver.php`, `app/Listeners/*`, `database/migrations/*security_audit_log*.php`
 
 ---
 

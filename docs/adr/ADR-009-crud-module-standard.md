@@ -1,8 +1,11 @@
 # ADR-009: CRUD Module Standard
 
-**Status**: Accepted  
+**Status**: Vigente  
 **Date**: 2026-03-22  
 **Authors**: Caracoders Engineering
+
+**Originating PRD**: PRD-04, extended and reconciled by PRD-07  
+**Implementation references**: `app/Http/Controllers/System/RoleController.php`, `app/Http/Controllers/System/UserController.php`, `app/Http/Requests/System/*`, `app/Policies/*`, `resources/js/pages/system/**/*`, `app/Console/Commands/MakeScaffoldCommand.php`, `app/Support/Scaffold/*`, `stubs/scaffold/*`
 
 ---
 
@@ -15,6 +18,21 @@ PRD-04 establishes this standard. This ADR freezes the key decisions and justifi
 ---
 
 ## Decision
+
+### 0. PRD-07 reconciliation: phase-1 scaffold contract is now frozen
+
+PRD-07 extends this ADR with one bounded generator contract for `php artisan make:scaffold`:
+
+- repeated `--field` is the only supported phase-1 field-definition mechanism;
+- writable generation covers model, migration, factory, controller, store/update requests, policy, permissions seeder, route file, index/create/edit/show pages, shared form component, module types, and five Pest files;
+- read-only generation always means `index` + `show`, never catalog-only;
+- generated FormRequests MUST use explicit Gate-backed `authorize()` methods and MUST NOT default to raw `true`;
+- verification-ready means generator-owned files are structurally correct after the documented manual integration steps, not that the command silently edits shared files;
+- route registration, `DatabaseSeeder` wiring, Wayfinder regeneration, and optional navigation integration remain explicit maintainer responsibilities.
+
+### 0.1 Governance boundary
+
+Structural scaffold automation is allowed in phase 1 because it removes repetitive setup work. Shared transversal abstractions, richer CRUD runtimes, lifecycle/export generators, and similar extractions remain blocked by the rule of three: at least three real modules must prove the same cross-cutting need before the boilerplate graduates that behavior into a reusable abstraction.
 
 ### 1. Page Pattern: Direct Eloquent Props for Inertia Pages (No API Resources by Default)
 

@@ -1,8 +1,11 @@
 # ADR-007: Logging and Correlation Policy
 
-**Status**: Accepted  
+**Status**: Vigente  
 **Date**: 2026-03-21  
-**Authors**: Caracoders Engineering  
+**Authors**: Caracoders Engineering
+
+**Originating PRD**: PRD-03, reconciled by PRD-07  
+**Implementation references**: `app/Http/Middleware/HandleCorrelation.php`, `bootstrap/app.php`, `config/logging.php`, `app/Services/SecurityAuditService.php`, `routes/console.php`
 
 ---
 
@@ -32,11 +35,11 @@ The `Context` facade (`Illuminate\Support\Facades\Context`) is used instead of `
 
 ### Channel strategy
 
-| Channel | Driver | Path | Purpose |
-|---------|--------|------|---------|
-| `stack` | stack | (channels: `daily`) | Default application log |
-| `daily` | daily | `storage/logs/laravel-{date}.log` | General app logs, rotated daily |
-| `security` | daily | `storage/logs/security.log` | Security events: login, logout, 2FA, roles |
+| Channel    | Driver | Path                              | Purpose                                    |
+| ---------- | ------ | --------------------------------- | ------------------------------------------ |
+| `stack`    | stack  | (channels: `daily`)               | Default application log                    |
+| `daily`    | daily  | `storage/logs/laravel-{date}.log` | General app logs, rotated daily            |
+| `security` | daily  | `storage/logs/security.log`       | Security events: login, logout, 2FA, roles |
 
 The `security` channel is isolated from the main `stack` by design. Security events must not be mixed with application debug logs, and operational teams may ship `security.log` to a SIEM independently.
 
@@ -54,6 +57,7 @@ Setting `LOG_FORMAT=json` in `.env` activates JSON log formatting for the `daily
 ### Additional context shared per request
 
 The middleware also adds:
+
 - `user_id` — authenticated user's ID, or `null` for guests.
 - `url` — HTTP method + path (e.g., `GET dashboard`).
 
@@ -67,13 +71,13 @@ The middleware also adds:
 
 The following patterns are **prohibited** in this codebase:
 
-| Prohibited | Reason | Correct alternative |
-|-----------|--------|---------------------|
-| `env('LOG_*')` outside config files | Bypasses config layer | Read from `config('logging.*')` |
-| `Log::withContext()` for correlation | Request-scoped only — doesn't propagate to jobs | Use `Context::add()` in middleware |
-| `Log::shareContext()` for correlation | Same issue as above | Use `Context::add()` |
-| `Log::emergency()` for business errors | Reserved for system-level alerts | Use `BoilerplateException` or `Log::warning()` |
-| Plain `Log::info('login')` for security events | Not isolated, no structure | Use `Log::channel('security')->info(...)` via `SecurityAuditService` |
+| Prohibited                                     | Reason                                          | Correct alternative                                                  |
+| ---------------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------- |
+| `env('LOG_*')` outside config files            | Bypasses config layer                           | Read from `config('logging.*')`                                      |
+| `Log::withContext()` for correlation           | Request-scoped only — doesn't propagate to jobs | Use `Context::add()` in middleware                                   |
+| `Log::shareContext()` for correlation          | Same issue as above                             | Use `Context::add()`                                                 |
+| `Log::emergency()` for business errors         | Reserved for system-level alerts                | Use `BoilerplateException` or `Log::warning()`                       |
+| Plain `Log::info('login')` for security events | Not isolated, no structure                      | Use `Log::channel('security')->info(...)` via `SecurityAuditService` |
 
 ---
 
