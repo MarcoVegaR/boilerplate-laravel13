@@ -119,11 +119,21 @@ function integrateGeneratedModule(string $module, string $resource, string $mode
     $callLine = "        \$this->call({$seederClass}::class);";
 
     if (! str_contains($seederContents, $callLine)) {
-        $seederContents = str_replace(
-            '        $this->call(AuditModulePermissionsSeeder::class);',
-            '        $this->call(AuditModulePermissionsSeeder::class);'.PHP_EOL.$callLine,
+        $updatedSeederContents = preg_replace(
+            '/^\s*if \(! in_array\(\(string\) config\(\'app\.env\'\), \[\'local\', \'testing\'\], true\)\) \{$/m',
+            $callLine.PHP_EOL.PHP_EOL.'        if (! in_array((string) config(\'app.env\'), [\'local\', \'testing\'], true)) {',
             $seederContents,
+            1,
         );
+
+        if (is_string($updatedSeederContents)) {
+            $seederContents = $updatedSeederContents;
+        }
+
+        if (! str_contains($seederContents, $callLine)) {
+            throw new RuntimeException('Unable to register generated permissions seeder in DatabaseSeeder.');
+        }
+
         $filesystem->put($seederPath, $seederContents);
     }
 }
