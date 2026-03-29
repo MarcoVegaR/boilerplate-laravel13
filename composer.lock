@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "183f6bcc78a93727762d318175b99274",
+    "content-hash": "f64338d3c3371441647d7f6cbc7a18a3",
     "packages": [
         {
             "name": "aws/aws-crt-php",
@@ -1384,16 +1384,16 @@
         },
         {
             "name": "laravel/ai",
-            "version": "v0.3.2",
+            "version": "v0.4.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/laravel/ai.git",
-                "reference": "dfdf853427eb9fb8d763f8d9e2ed62cfcc03fb9c"
+                "reference": "91441b6ae5bc995f21bb3043744860bd3043e78c"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/laravel/ai/zipball/dfdf853427eb9fb8d763f8d9e2ed62cfcc03fb9c",
-                "reference": "dfdf853427eb9fb8d763f8d9e2ed62cfcc03fb9c",
+                "url": "https://api.github.com/repos/laravel/ai/zipball/91441b6ae5bc995f21bb3043744860bd3043e78c",
+                "reference": "91441b6ae5bc995f21bb3043744860bd3043e78c",
                 "shasum": ""
             },
             "require": {
@@ -1446,20 +1446,20 @@
                 "issues": "https://github.com/laravel/ai/issues",
                 "source": "https://github.com/laravel/ai"
             },
-            "time": "2026-03-18T14:44:36+00:00"
+            "time": "2026-03-27T18:24:41+00:00"
         },
         {
             "name": "laravel/fortify",
-            "version": "v1.36.1",
+            "version": "v1.36.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/laravel/fortify.git",
-                "reference": "cad8bfeb63f6818f173d40090725c565c92651d4"
+                "reference": "b36e0782e6f5f6cfbab34327895a63b7c4c031f9"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/laravel/fortify/zipball/cad8bfeb63f6818f173d40090725c565c92651d4",
-                "reference": "cad8bfeb63f6818f173d40090725c565c92651d4",
+                "url": "https://api.github.com/repos/laravel/fortify/zipball/b36e0782e6f5f6cfbab34327895a63b7c4c031f9",
+                "reference": "b36e0782e6f5f6cfbab34327895a63b7c4c031f9",
                 "shasum": ""
             },
             "require": {
@@ -1509,7 +1509,7 @@
                 "issues": "https://github.com/laravel/fortify/issues",
                 "source": "https://github.com/laravel/fortify"
             },
-            "time": "2026-03-10T19:59:49+00:00"
+            "time": "2026-03-20T20:13:51+00:00"
         },
         {
             "name": "laravel/framework",
@@ -1923,16 +1923,16 @@
         },
         {
             "name": "laravel/wayfinder",
-            "version": "v0.1.14",
+            "version": "v0.1.15",
             "source": {
                 "type": "git",
                 "url": "https://github.com/laravel/wayfinder.git",
-                "reference": "57bbd154ae69b11513d459bb97a0db19a8b7c871"
+                "reference": "25b8a947af54d35106dc04e933d05a6b7fad1133"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/laravel/wayfinder/zipball/57bbd154ae69b11513d459bb97a0db19a8b7c871",
-                "reference": "57bbd154ae69b11513d459bb97a0db19a8b7c871",
+                "url": "https://api.github.com/repos/laravel/wayfinder/zipball/25b8a947af54d35106dc04e933d05a6b7fad1133",
+                "reference": "25b8a947af54d35106dc04e933d05a6b7fad1133",
                 "shasum": ""
             },
             "require": {
@@ -1982,7 +1982,7 @@
                 "issues": "https://github.com/laravel/wayfinder/issues",
                 "source": "https://github.com/laravel/wayfinder"
             },
-            "time": "2026-02-24T12:51:07+00:00"
+            "time": "2026-03-25T20:46:44+00:00"
         },
         {
             "name": "league/commonmark",
@@ -3177,16 +3177,16 @@
         },
         {
             "name": "owen-it/laravel-auditing",
-            "version": "v14.0.2",
+            "version": "v14.0.3",
             "source": {
                 "type": "git",
                 "url": "https://github.com/owen-it/laravel-auditing.git",
-                "reference": "c516bdfe516f450a067f2036ec1f6088227962e5"
+                "reference": "34e8a21890082a7a353894a4acdeb2d301dbe0d4"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/owen-it/laravel-auditing/zipball/c516bdfe516f450a067f2036ec1f6088227962e5",
-                "reference": "c516bdfe516f450a067f2036ec1f6088227962e5",
+                "url": "https://api.github.com/repos/owen-it/laravel-auditing/zipball/34e8a21890082a7a353894a4acdeb2d301dbe0d4",
+                "reference": "34e8a21890082a7a353894a4acdeb2d301dbe0d4",
                 "shasum": ""
             },
             "require": {
@@ -3257,7 +3257,7 @@
                 "issues": "https://github.com/owen-it/laravel-auditing/issues",
                 "source": "https://github.com/owen-it/laravel-auditing"
             },
-            "time": "2026-03-18T15:00:52+00:00"
+            "time": "2026-03-27T13:27:17+00:00"
         },
         {
             "name": "paragonie/constant_time_encoding",
@@ -8850,16 +8850,16 @@
         },
         {
             "name": "laravel/boost",
-            "version": "v2.3.4",
+            "version": "v2.4.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/laravel/boost.git",
-                "reference": "9e3dd5f05b59394e463e78853067dc36c63a0394"
+                "reference": "f6241df9fd81a86d79a051851177d4ffe3e28506"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/laravel/boost/zipball/9e3dd5f05b59394e463e78853067dc36c63a0394",
-                "reference": "9e3dd5f05b59394e463e78853067dc36c63a0394",
+                "url": "https://api.github.com/repos/laravel/boost/zipball/f6241df9fd81a86d79a051851177d4ffe3e28506",
+                "reference": "f6241df9fd81a86d79a051851177d4ffe3e28506",
                 "shasum": ""
             },
             "require": {
@@ -8912,20 +8912,20 @@
                 "issues": "https://github.com/laravel/boost/issues",
                 "source": "https://github.com/laravel/boost"
             },
-            "time": "2026-03-17T16:42:14+00:00"
+            "time": "2026-03-25T16:37:40+00:00"
         },
         {
             "name": "laravel/mcp",
-            "version": "v0.6.3",
+            "version": "v0.6.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/laravel/mcp.git",
-                "reference": "8a2c97ec1184e16029080e3f6172a7ca73de4df9"
+                "reference": "f822c5eb5beed19adb2e5bfe2f46f8c977ecea42"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/laravel/mcp/zipball/8a2c97ec1184e16029080e3f6172a7ca73de4df9",
-                "reference": "8a2c97ec1184e16029080e3f6172a7ca73de4df9",
+                "url": "https://api.github.com/repos/laravel/mcp/zipball/f822c5eb5beed19adb2e5bfe2f46f8c977ecea42",
+                "reference": "f822c5eb5beed19adb2e5bfe2f46f8c977ecea42",
                 "shasum": ""
             },
             "require": {
@@ -8985,7 +8985,7 @@
                 "issues": "https://github.com/laravel/mcp/issues",
                 "source": "https://github.com/laravel/mcp"
             },
-            "time": "2026-03-12T12:46:43+00:00"
+            "time": "2026-03-19T12:37:13+00:00"
         },
         {
             "name": "laravel/pail",
@@ -9198,16 +9198,16 @@
         },
         {
             "name": "laravel/sail",
-            "version": "v1.54.0",
+            "version": "v1.55.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/laravel/sail.git",
-                "reference": "bcc5e06f1a79d806d880a4b027964d2aa5872b07"
+                "reference": "67dc1b72da4e066a2fb54c1c7582fd2f140ea191"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/laravel/sail/zipball/bcc5e06f1a79d806d880a4b027964d2aa5872b07",
-                "reference": "bcc5e06f1a79d806d880a4b027964d2aa5872b07",
+                "url": "https://api.github.com/repos/laravel/sail/zipball/67dc1b72da4e066a2fb54c1c7582fd2f140ea191",
+                "reference": "67dc1b72da4e066a2fb54c1c7582fd2f140ea191",
                 "shasum": ""
             },
             "require": {
@@ -9257,7 +9257,7 @@
                 "issues": "https://github.com/laravel/sail/issues",
                 "source": "https://github.com/laravel/sail"
             },
-            "time": "2026-03-11T14:10:52+00:00"
+            "time": "2026-03-23T15:56:34+00:00"
         },
         {
             "name": "league/uri-components",
@@ -12150,5 +12150,5 @@
         "php": "^8.4"
     },
     "platform-dev": {},
-    "plugin-api-version": "2.6.0"
+    "plugin-api-version": "2.9.0"
 }
