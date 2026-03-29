@@ -16,6 +16,7 @@ it('verifies a writable scaffold after the documented manual integration steps',
     $module = 'verify-'.Str::lower(Str::random(6));
     $model = Str::studly($module).'Module';
     $resource = Str::plural(Str::kebab($model));
+    $permissionsSeederClass = generatedPermissionsSeederClass($module, $resource);
 
     $GLOBALS['generated_scaffold_tokens'][] = $module;
 
@@ -35,6 +36,7 @@ it('verifies a writable scaffold after the documented manual integration steps',
     $this->refreshApplication();
 
     $this->artisan('migrate:fresh --seed --no-interaction')->assertSuccessful();
+    $this->artisan('db:seed', ['--class' => $permissionsSeederClass, '--no-interaction' => true])->assertSuccessful();
     $this->artisan('wayfinder:generate --with-form --no-interaction')->assertSuccessful();
 
     $controller = file_get_contents(base_path('app/Http/Controllers/'.Str::studly($module).'/'.$model.'Controller.php'));
@@ -136,6 +138,11 @@ function integrateGeneratedModule(string $module, string $resource, string $mode
 
         $filesystem->put($seederPath, $seederContents);
     }
+}
+
+function generatedPermissionsSeederClass(string $module, string $resource): string
+{
+    return 'Database\\Seeders\\'.Str::studly($module).Str::studly(Str::singular($resource)).'PermissionsSeeder';
 }
 
 function backupFileOnce(string $path): void
