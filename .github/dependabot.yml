@@ -72,6 +72,15 @@ updates:
       - dependency-name: '@inertiajs/react'
         update-types:
           - version-update:semver-major
+      - dependency-name: typescript
+        update-types:
+          - version-update:semver-major
+      - dependency-name: laravel-vite-plugin
+        update-types:
+          - version-update:semver-major
+      - dependency-name: lucide-react
+        update-types:
+          - version-update:semver-major
       - dependency-name: vite
         update-types:
           - version-update:semver-major
