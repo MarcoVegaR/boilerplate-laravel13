@@ -51,8 +51,23 @@ it('returns the unified audit index with filter options and navigation visibilit
             ->has('events.data', 2)
             ->has('filterOptions.sources', 3)
             ->where('filters.source', 'all')
+            ->where('hasActiveDateFilters', false)
             ->where('events.per_page', 20)
             ->where('ui.navigation.items', fn ($items) => collect($items)->contains(fn (array $item) => $item['title'] === 'Auditoría'))
+        );
+});
+
+it('marks date-only overrides as active filters in the audit index props', function () {
+    $admin = User::factory()->withSuperAdmin()->withTwoFactor()->create();
+
+    $this->actingAs($admin)
+        ->get(route('system.audit.index', [
+            'to' => now()->subDay()->toDateString(),
+        ]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('system/audit/index')
+            ->where('hasActiveDateFilters', true)
         );
 });
 
@@ -265,6 +280,10 @@ it('resets filter state to defaults when the toolbar clear contract requests sou
     Audit::query()->delete();
     SecurityAuditLog::query()->delete();
     $actor = User::withoutAuditing(fn () => User::factory()->create());
+    $fromDate = now()->startOfDay()->subDays(10)->toDateString();
+    $toDate = now()->startOfDay()->subDays(3)->toDateString();
+    $defaultFromDate = now()->subDays(30)->toDateString();
+    $defaultToDate = now()->toDateString();
 
     createModelAudit(actor: $actor, event: 'created');
     createSecurityAudit();
@@ -272,21 +291,31 @@ it('resets filter state to defaults when the toolbar clear contract requests sou
     $this->actingAs($admin)
         ->get(route('system.audit.index', [
             'source' => 'model',
+            'from' => $fromDate,
+            'to' => $toDate,
             'event' => 'created',
             'user_id' => $actor->id,
         ]))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->where('filters.source', 'model')
+            ->where('filters.from', $fromDate)
+            ->where('filters.to', $toDate)
             ->where('filters.event', 'created')
             ->where('filters.user_id', (string) $actor->id)
         );
 
     $this->actingAs($admin)
-        ->get(route('system.audit.index', ['source' => 'all']))
+        ->get(route('system.audit.index', [
+            'source' => 'all',
+            'from' => '',
+            'to' => '',
+        ]))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->where('filters.source', 'all')
+            ->where('filters.from', $defaultFromDate)
+            ->where('filters.to', $defaultToDate)
             ->where('filters.event', null)
             ->where('filters.user_id', null)
             ->has('events.data', 2)

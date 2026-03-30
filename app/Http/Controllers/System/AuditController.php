@@ -21,6 +21,7 @@ class AuditController extends Controller
             'events' => $this->auditQueryService->paginateIndex($request->query()),
             'filters' => $this->auditQueryService->filters($request->query()),
             'filterOptions' => $this->auditQueryService->filterOptions($request->query()),
+            'hasActiveDateFilters' => $this->auditQueryService->hasActiveDateFilters($request->query()),
             'breadcrumbs' => [
                 ['title' => 'Auditoría', 'href' => route('system.audit.index', absolute: false)],
             ],

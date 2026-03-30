@@ -51,9 +51,9 @@ class AuditQueryService
             : 'all';
 
         $from = $this->normalizeDate($input['from'] ?? null)
-            ?? now()->subDays(self::DEFAULT_WINDOW_DAYS)->toDateString();
+            ?? $this->defaultFromDate();
         $to = $this->normalizeDate($input['to'] ?? null)
-            ?? now()->toDateString();
+            ?? $this->defaultToDate();
 
         $sort = in_array((string) ($input['sort'] ?? 'timestamp'), ['timestamp', 'actor_name', 'subject_label', 'ip_address'], true)
             ? (string) ($input['sort'] ?? 'timestamp')
@@ -72,6 +72,14 @@ class AuditQueryService
             'sort' => $sort,
             'direction' => $direction,
         ];
+    }
+
+    public function hasActiveDateFilters(array $input): bool
+    {
+        $filters = $this->filters($input);
+
+        return $filters['from'] !== $this->defaultFromDate()
+            || $filters['to'] !== $this->defaultToDate();
     }
 
     public function paginateIndex(array $input): LengthAwarePaginator
@@ -202,6 +210,16 @@ class AuditQueryService
         }
 
         return $rows->values();
+    }
+
+    private function defaultFromDate(): string
+    {
+        return now()->subDays(self::DEFAULT_WINDOW_DAYS)->toDateString();
+    }
+
+    private function defaultToDate(): string
+    {
+        return now()->toDateString();
     }
 
     /**

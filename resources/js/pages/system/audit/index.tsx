@@ -1,12 +1,6 @@
 import { Head, Link, router } from '@inertiajs/react';
-import {
-    ArrowDown,
-    ArrowUp,
-    ArrowUpDown,
-    Download,
-    ScrollText,
-} from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { ArrowDown, ArrowUp, ArrowUpDown, ScrollText } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 
 import {
     index,
@@ -15,7 +9,6 @@ import {
 import AuditExportController from '@/actions/App/Http/Controllers/System/AuditExportController';
 import { AuditSourceBadge } from '@/components/system/audit-source-badge';
 import { PageHeader } from '@/components/system/page-header';
-import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LaravelPagination } from '@/components/ui/pagination';
@@ -45,10 +38,23 @@ import type {
 
 import { AuditFiltersPanel } from './components/audit-filters';
 
+type AppliedAuditFilter = {
+    key: 'source' | 'user_id' | 'event' | 'auditable_type' | 'auditable_id';
+    label: string;
+    value: string;
+};
+
+function isAppliedAuditFilter(
+    value: AppliedAuditFilter | null,
+): value is AppliedAuditFilter {
+    return value !== null;
+}
+
 type Props = {
     events: PaginatedAuditEvents;
     filters: AuditFilters;
     filterOptions: AuditFilterOptions;
+    hasActiveDateFilters: boolean;
 };
 
 function formatRelative(value: string | null): string {
@@ -110,13 +116,22 @@ function renderSortIcon(activeSort: string, direction: string, column: string) {
     );
 }
 
-export default function AuditIndex({ events, filters, filterOptions }: Props) {
+export default function AuditIndex({
+    events,
+    filters,
+    filterOptions,
+    hasActiveDateFilters,
+}: Props) {
     const breadcrumbs: BreadcrumbItem[] = [
         { title: 'Auditoría', href: index.url() },
     ];
 
     const canExport = useCan('system.audit.export');
     const [draftFilters, setDraftFilters] = useState(filters);
+
+    useEffect(() => {
+        setDraftFilters(filters);
+    }, [filters]);
 
     const exportHref = useMemo(
         () =>
@@ -168,6 +183,90 @@ export default function AuditIndex({ events, filters, filterOptions }: Props) {
         );
     }, [filterOptions.users, filters.user_id]);
 
+    const activeAuditableTypeLabel = useMemo(() => {
+        if (!filters.auditable_type) {
+            return null;
+        }
+
+        return (
+            filterOptions.auditableTypes.find(
+                (option) => option.value === filters.auditable_type,
+            )?.label ?? filters.auditable_type
+        );
+    }, [filterOptions.auditableTypes, filters.auditable_type]);
+
+    const appliedFilters = useMemo(
+        () =>
+            [
+                filters.source !== 'all'
+                    ? {
+                          key: 'source' as const,
+                          label: 'Fuente',
+                          value: activeSourceLabel,
+                      }
+                    : null,
+                filters.user_id
+                    ? {
+                          key: 'user_id' as const,
+                          label: 'Actor',
+                          value: activeUserLabel,
+                      }
+                    : null,
+                filters.event
+                    ? {
+                          key: 'event' as const,
+                          label: 'Evento',
+                          value: activeEventLabel,
+                      }
+                    : null,
+                activeAuditableTypeLabel
+                    ? {
+                          key: 'auditable_type' as const,
+                          label: 'Tipo',
+                          value: activeAuditableTypeLabel,
+                      }
+                    : null,
+                filters.auditable_id
+                    ? {
+                          key: 'auditable_id' as const,
+                          label: 'ID',
+                          value: filters.auditable_id,
+                      }
+                    : null,
+            ].filter(isAppliedAuditFilter),
+        [
+            activeAuditableTypeLabel,
+            activeEventLabel,
+            activeSourceLabel,
+            activeUserLabel,
+            filters.auditable_id,
+            filters.event,
+            filters.source,
+            filters.user_id,
+        ],
+    );
+
+    const hasAppliedFilters = appliedFilters.length > 0 || hasActiveDateFilters;
+
+    const advancedActiveCount = useMemo(() => {
+        return [
+            filters.source !== 'all',
+            Boolean(filters.auditable_type),
+        ].filter(Boolean).length;
+    }, [filters.auditable_type, filters.source]);
+
+    const isDraftDirty = useMemo(() => {
+        return (
+            draftFilters.source !== filters.source ||
+            draftFilters.from !== filters.from ||
+            draftFilters.to !== filters.to ||
+            draftFilters.user_id !== filters.user_id ||
+            draftFilters.event !== filters.event ||
+            draftFilters.auditable_type !== filters.auditable_type ||
+            draftFilters.auditable_id !== filters.auditable_id
+        );
+    }, [draftFilters, filters]);
+
     function applyFilters(nextFilters: AuditFilters) {
         router.get(
             index.url(),
@@ -212,6 +311,8 @@ export default function AuditIndex({ events, filters, filterOptions }: Props) {
         const nextFilters: AuditFilters = {
             ...filters,
             source: 'all',
+            from: '',
+            to: '',
             user_id: undefined,
             event: undefined,
             auditable_type: undefined,
@@ -219,6 +320,41 @@ export default function AuditIndex({ events, filters, filterOptions }: Props) {
             sort: 'timestamp',
             direction: 'desc',
         };
+
+        setDraftFilters(nextFilters);
+        applyFilters(nextFilters);
+    }
+
+    function resetDraftFilters() {
+        setDraftFilters(filters);
+    }
+
+    function removeFilter(
+        key: 'source' | 'user_id' | 'event' | 'auditable_type' | 'auditable_id',
+    ) {
+        const nextFilters: AuditFilters = { ...filters };
+
+        if (key === 'source') {
+            nextFilters.source = 'all';
+            nextFilters.auditable_type = undefined;
+            nextFilters.auditable_id = undefined;
+        }
+
+        if (key === 'user_id') {
+            nextFilters.user_id = undefined;
+        }
+
+        if (key === 'event') {
+            nextFilters.event = undefined;
+        }
+
+        if (key === 'auditable_type') {
+            nextFilters.auditable_type = undefined;
+        }
+
+        if (key === 'auditable_id') {
+            nextFilters.auditable_id = undefined;
+        }
 
         setDraftFilters(nextFilters);
         applyFilters(nextFilters);
@@ -246,37 +382,28 @@ export default function AuditIndex({ events, filters, filterOptions }: Props) {
                     icon={ScrollText}
                     title="Auditoría"
                     description="Consulta cambios de modelos y eventos de seguridad del sistema."
-                    actions={
-                        canExport ? (
-                            <Button asChild variant="outline" size="sm">
-                                <a href={exportHref}>
-                                    <Download className="size-4" />
-                                    Exportar CSV
-                                </a>
-                            </Button>
-                        ) : undefined
-                    }
                 />
 
                 <Card className="gap-0 py-0">
                     <AuditFiltersPanel
-                        filters={filters}
                         filterOptions={filterOptions}
                         onApply={applyFilters}
                         onClear={clearFilters}
+                        onResetDraft={resetDraftFilters}
                         draft={draftFilters}
+                        isDraftDirty={isDraftDirty}
                         onDraftChange={handleDraftChange}
                         summary={{
                             total: events.total,
-                            sourceLabel: activeSourceLabel,
-                            userLabel: activeUserLabel,
-                            eventLabel: activeEventLabel,
                             from: filters.from,
                             to: filters.to,
-                            perPage: 20,
-                            auditableType: filters.auditable_type,
-                            auditableId: filters.auditable_id,
+                            advancedActiveCount,
                         }}
+                        hasAppliedFilters={hasAppliedFilters}
+                        appliedFilters={appliedFilters}
+                        onRemoveFilter={removeFilter}
+                        canExport={canExport}
+                        exportHref={exportHref}
                     />
                 </Card>
 
