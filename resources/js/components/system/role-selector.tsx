@@ -75,7 +75,7 @@ function RoleSelector({
                 </div>
             )}
 
-            <div className="divide-y divide-border rounded-xl border border-border">
+            <div className="max-h-80 [contain:paint] divide-y divide-border overflow-y-auto rounded-xl border border-border">
                 {filteredRoles.length === 0 && (
                     <p className="px-4 py-6 text-center text-sm text-muted-foreground">
                         Sin resultados para &ldquo;{search}&rdquo;
