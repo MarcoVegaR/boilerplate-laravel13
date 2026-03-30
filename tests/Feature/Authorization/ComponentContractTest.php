@@ -156,3 +156,26 @@ test('vite manifest entry for app.tsx has a non-empty file reference', function 
     expect($appEntry)->not->toBeNull();
     expect($appEntry['file'] ?? '')->not->toBeEmpty();
 });
+
+test('flash toaster is mounted once at the application root', function () {
+    $appRoot = file_get_contents(base_path('resources/js/app.tsx'));
+    $sidebarLayout = file_get_contents(base_path('resources/js/layouts/app/app-sidebar-layout.tsx'));
+
+    expect($appRoot)->toContain('import { Toaster } from \'sonner\';')
+        ->and($appRoot)->toContain("import { FlashToaster } from '@/components/flash-toaster';")
+        ->and($appRoot)->toContain('<FlashToaster />')
+        ->and($appRoot)->toContain('<Toaster theme="system" richColors closeButton />')
+        ->and($sidebarLayout)->not->toContain('<FlashToaster />')
+        ->and($sidebarLayout)->not->toContain('<Toaster theme="system" richColors closeButton />');
+});
+
+test('flash toaster consumes shared page flash props and inertia flash events', function () {
+    $flashToaster = file_get_contents(base_path('resources/js/components/flash-toaster.tsx'));
+
+    expect($flashToaster)->toContain("import { router } from '@inertiajs/react';")
+        ->and($flashToaster)->toContain('window.history.state?.page?.props?.flash')
+        ->and($flashToaster)->toContain("router.on('navigate'")
+        ->and($flashToaster)->toContain("router.on('success'")
+        ->and($flashToaster)->toContain("router.on('flash'")
+        ->and($flashToaster)->toContain('showFlash(event.detail.page.props.flash as Flash | undefined);');
+});

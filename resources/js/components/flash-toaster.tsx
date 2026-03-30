@@ -1,67 +1,96 @@
-import { usePage } from '@inertiajs/react';
+import { router } from '@inertiajs/react';
 import { useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import type { Flash } from '@/types/ui';
 
+function normalizeFlash(flash?: Partial<Flash> | null): Flash {
+    return {
+        success: flash?.success ?? null,
+        error: flash?.error ?? null,
+        info: flash?.info ?? null,
+        warning: flash?.warning ?? null,
+    };
+}
+
+function hasFlash(flash: Flash): boolean {
+    return Object.values(flash).some(Boolean);
+}
+
+function dispatchFlashToasts(flash: Flash): void {
+    if (flash.success) {
+        toast.success(flash.success);
+    }
+
+    if (flash.error) {
+        toast.error(flash.error);
+    }
+
+    if (flash.info) {
+        toast.info(flash.info);
+    }
+
+    if (flash.warning) {
+        toast.warning(flash.warning);
+    }
+}
+
 /**
- * FlashToaster — renderless component that bridges Laravel flash session data
- * with the Sonner toast system.
+ * FlashToaster bridges Inertia flash events into Sonner toasts.
  *
- * Mount once in the authenticated layout alongside <Toaster />. It reads
- * `flash` from Inertia shared props and fires the appropriate toast when the
- * flash value changes (i.e. after a redirect with ->with('success', '…')).
- *
- * De-duplication: a ref tracks the previous flash snapshot so back-navigation
- * or re-renders that do not change the flash values do not re-fire toasts.
- *
- * NOTE: This is a UI convenience only. Backend enforcement is always required.
+ * Mount once at the application root so redirects between pages can deliver
+ * notifications without depending on a remounting layout instance.
  */
 export function FlashToaster() {
-    const { flash } = usePage<{ flash: Flash }>().props;
+    const lastToastRef = useRef<{ signature: string; shownAt: number } | null>(
+        null,
+    );
 
-    const prevRef = useRef<Flash>({
-        success: null,
-        error: null,
-        info: null,
-        warning: null,
-    });
+    function showFlash(flashData?: Partial<Flash> | null): void {
+        const normalizedFlash = normalizeFlash(flashData);
+
+        if (!hasFlash(normalizedFlash)) {
+            lastToastRef.current = null;
+
+            return;
+        }
+
+        const signature = JSON.stringify(normalizedFlash);
+        const now = Date.now();
+
+        if (
+            lastToastRef.current?.signature === signature &&
+            now - lastToastRef.current.shownAt < 1000
+        ) {
+            return;
+        }
+
+        lastToastRef.current = { signature, shownAt: now };
+        dispatchFlashToasts(normalizedFlash);
+    }
 
     useEffect(() => {
-        const prev = prevRef.current;
-        let fired = false;
+        showFlash(
+            window.history.state?.page?.props?.flash as Flash | undefined,
+        );
 
-        if (flash?.success && flash.success !== prev.success) {
-            toast.success(flash.success);
-            fired = true;
-        }
+        const removeFlashListener = router.on('flash', (event) => {
+            showFlash(event.detail.flash as Flash);
+        });
 
-        if (flash?.error && flash.error !== prev.error) {
-            toast.error(flash.error);
-            fired = true;
-        }
+        const removeNavigateListener = router.on('navigate', (event) => {
+            showFlash(event.detail.page.props.flash as Flash | undefined);
+        });
 
-        if (flash?.info && flash.info !== prev.info) {
-            toast.info(flash.info);
-            fired = true;
-        }
+        const removeSuccessListener = router.on('success', (event) => {
+            showFlash(event.detail.page.props.flash as Flash | undefined);
+        });
 
-        if (flash?.warning && flash.warning !== prev.warning) {
-            toast.warning(flash.warning);
-            fired = true;
-        }
-
-        // After firing, reset to null so repeated identical messages on
-        // subsequent visits will still trigger. The useEffect dependency
-        // array prevents double-firing within the same render cycle.
-        prevRef.current = fired
-            ? { success: null, error: null, info: null, warning: null }
-            : {
-                  success: flash?.success ?? null,
-                  error: flash?.error ?? null,
-                  info: flash?.info ?? null,
-                  warning: flash?.warning ?? null,
-              };
-    }, [flash?.success, flash?.error, flash?.info, flash?.warning]);
+        return () => {
+            removeFlashListener();
+            removeNavigateListener();
+            removeSuccessListener();
+        };
+    }, []);
 
     return null;
 }

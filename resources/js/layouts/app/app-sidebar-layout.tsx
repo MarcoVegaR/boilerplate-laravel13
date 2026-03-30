@@ -1,10 +1,8 @@
 import { usePage } from '@inertiajs/react';
-import { Toaster } from 'sonner';
 import { AppContent } from '@/components/app-content';
 import { AppShell } from '@/components/app-shell';
 import { AppSidebar } from '@/components/app-sidebar';
 import { AppSidebarHeader } from '@/components/app-sidebar-header';
-import { FlashToaster } from '@/components/flash-toaster';
 import type { AppLayoutProps } from '@/types';
 
 export default function AppSidebarLayout({
@@ -25,9 +23,7 @@ export default function AppSidebarLayout({
                         Todos los derechos reservados.
                     </p>
                 </footer>
-                <FlashToaster />
             </AppContent>
-            <Toaster theme="system" richColors closeButton />
         </AppShell>
     );
 }
