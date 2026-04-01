@@ -45,6 +45,13 @@ class HandleInertiaRequests extends Middleware
                 'user' => $user,
                 'permissions' => $user?->getAllPermissions()->pluck('name')->all() ?? [],
             ],
+            'copilot' => [
+                'enabled' => (bool) config('ai-copilot.enabled'),
+                'module_enabled' => (bool) config('ai-copilot.modules.users.enabled'),
+                'channel_enabled' => (bool) config('ai-copilot.channels.web.enabled'),
+                'can_view' => (bool) $user?->can('system.users-copilot.view'),
+                'can_execute' => (bool) $user?->can('system.users-copilot.execute'),
+            ],
             'flash' => Inertia::always([
                 'success' => $request->session()->get('success'),
                 'error' => $request->session()->get('error'),

@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Ai\Listeners\LogUsersCopilotResponse;
 use App\Listeners\RecordFailedLogin;
 use App\Listeners\RecordLogout;
 use App\Listeners\RecordRoleAssigned;
@@ -17,12 +18,17 @@ use Carbon\CarbonImmutable;
 use Illuminate\Auth\Events\Failed;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Logout;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
+use Laravel\Ai\Events\AgentPrompted;
 use Spatie\Permission\Events\RoleAttachedEvent;
 use Spatie\Permission\Events\RoleDetachedEvent;
 use Spatie\Permission\Models\Permission;
@@ -44,6 +50,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
         $this->configurePolicies();
+        $this->configureRateLimiting();
         $this->configureAuditing();
     }
 
@@ -98,7 +105,25 @@ class AppServiceProvider extends ServiceProvider
         Event::listen(Logout::class, RecordLogout::class);
         Event::listen(RoleAttachedEvent::class, RecordRoleAssigned::class);
         Event::listen(RoleDetachedEvent::class, RecordRoleRevoked::class);
+        Event::listen(AgentPrompted::class, LogUsersCopilotResponse::class);
 
         User::observe(TwoFactorAuditObserver::class);
+    }
+
+    /**
+     * Configure application rate limiters.
+     */
+    private function configureRateLimiting(): void
+    {
+        RateLimiter::for('users-copilot-messages', function (Request $request) {
+            $userId = $request->user()?->id;
+
+            $key = $userId !== null
+                ? 'user:'.$userId
+                : Str::transliterate((string) $request->ip());
+
+            return Limit::perMinute((int) config('ai-copilot.rate_limits.messages_per_minute', 6))
+                ->by($key);
+        });
     }
 }

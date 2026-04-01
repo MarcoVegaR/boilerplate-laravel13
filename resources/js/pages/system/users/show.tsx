@@ -9,6 +9,7 @@ import {
     Key,
     KeyRound,
     Shield,
+    Sparkles,
     Trash2,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -22,6 +23,7 @@ import {
 import ActivateUserController from '@/actions/App/Http/Controllers/System/Users/ActivateUserController';
 import DeactivateUserController from '@/actions/App/Http/Controllers/System/Users/DeactivateUserController';
 import SendPasswordResetController from '@/actions/App/Http/Controllers/System/Users/SendPasswordResetController';
+import { CopilotSheet } from '@/components/system/copilot/copilot-sheet';
 import { StatCard } from '@/components/system/stat-card';
 import { StatusBadge } from '@/components/system/status-badge';
 import { UserAvatar } from '@/components/system/user-avatar';
@@ -317,6 +319,24 @@ export default function UserShow({ user, groupedEffectivePermissions }: Props) {
                                     </Link>
                                 </Button>
                             )}
+
+                            <CopilotSheet
+                                subjectUser={{
+                                    id: user.id,
+                                    name: user.name,
+                                    email: user.email,
+                                }}
+                                trigger={
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                    >
+                                        <Sparkles className="size-4" />
+                                        Copiloto
+                                    </Button>
+                                }
+                            />
 
                             {canSendReset && (
                                 <Button

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\System;
 
+use App\Actions\System\Users\CreateUserAction;
 use App\Enums\SecurityEventType;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\System\Users\StoreUserRequest;
@@ -90,21 +91,15 @@ class UserController extends Controller
     /**
      * Store a newly created user in storage.
      */
-    public function store(StoreUserRequest $request): RedirectResponse
+    public function store(StoreUserRequest $request, CreateUserAction $createUserAction): RedirectResponse
     {
-        $user = User::create([
+        $user = $createUserAction->handle([
             'name' => $request->validated('name'),
-            'email' => Str::lower($request->validated('email')),
+            'email' => $request->validated('email'),
             'password' => $request->validated('password'),
             'is_active' => $request->boolean('is_active', true),
-            'email_verified_at' => now(),
+            'roles' => $request->validated('roles'),
         ]);
-
-        if ($request->filled('roles')) {
-            $user->syncRoles(
-                Role::active()->whereIn('id', $request->validated('roles'))->get()
-            );
-        }
 
         app(SecurityAuditService::class)->record(
             eventType: SecurityEventType::UserCreated,

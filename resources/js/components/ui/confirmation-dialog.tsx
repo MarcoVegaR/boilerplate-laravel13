@@ -22,6 +22,7 @@ type ConfirmationDialogProps = {
   onConfirm: () => void
   loading?: boolean
   className?: string
+  confirmTestId?: string
 }
 
 function ConfirmationDialog({
@@ -35,6 +36,7 @@ function ConfirmationDialog({
   onConfirm,
   loading = false,
   className,
+  confirmTestId,
 }: ConfirmationDialogProps) {
   function handleConfirm() {
     onConfirm()
@@ -62,6 +64,8 @@ function ConfirmationDialog({
           </Button>
 
           <Button
+            data-test={confirmTestId}
+            data-testid={confirmTestId}
             type="button"
             variant={variant}
             onClick={handleConfirm}

@@ -16,6 +16,7 @@ class DatabaseSeeder extends Seeder
         $this->call(RolesAndPermissionsSeeder::class);
         $this->call(AccessModulePermissionsSeeder::class);
         $this->call(AuditModulePermissionsSeeder::class);
+        $this->call(AiCopilotPermissionsSeeder::class);
 
         if (! in_array((string) config('app.env'), ['local', 'testing'], true)) {
             return;

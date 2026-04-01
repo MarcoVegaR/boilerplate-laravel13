@@ -13,6 +13,8 @@ use App\Http\Controllers\System\Users\DeactivateUserController;
 use App\Http\Controllers\System\Users\ExportUsersController;
 use App\Http\Controllers\System\Users\SendPasswordResetController;
 use App\Http\Controllers\System\Users\SyncUserRolesController;
+use App\Http\Controllers\System\UsersCopilotActionController;
+use App\Http\Controllers\System\UsersCopilotMessageController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth', 'verified', 'ensure-two-factor'])->prefix('system')->name('system.')->group(function () {
@@ -22,6 +24,11 @@ Route::middleware(['auth', 'verified', 'ensure-two-factor'])->prefix('system')->
 
     Route::get('users/export', ExportUsersController::class)->name('users.export');
     Route::post('users/bulk', BulkDeactivateUsersController::class)->name('users.bulk');
+    Route::post('users/copilot/messages', UsersCopilotMessageController::class)
+        ->middleware('throttle:users-copilot-messages')
+        ->name('users.copilot.messages');
+    Route::post('users/copilot/actions/{actionType}', UsersCopilotActionController::class)
+        ->name('users.copilot.actions');
 
     Route::resource('users', UserController::class);
 

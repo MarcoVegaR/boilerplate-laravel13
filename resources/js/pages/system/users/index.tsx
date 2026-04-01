@@ -12,6 +12,7 @@ import {
     Power,
     PowerOff,
     Search,
+    Sparkles,
     Trash2,
     Users,
 } from 'lucide-react';
@@ -29,6 +30,7 @@ import DeactivateUserController from '@/actions/App/Http/Controllers/System/User
 import ExportUsersController from '@/actions/App/Http/Controllers/System/Users/ExportUsersController';
 import SendPasswordResetController from '@/actions/App/Http/Controllers/System/Users/SendPasswordResetController';
 import { BulkActionBar } from '@/components/system/bulk-action-bar';
+import { CopilotSheet } from '@/components/system/copilot/copilot-sheet';
 import { PageHeader } from '@/components/system/page-header';
 import { StatusBadge } from '@/components/system/status-badge';
 import { UserAvatar } from '@/components/system/user-avatar';
@@ -302,6 +304,18 @@ export default function UsersIndex({ users, roles, filters }: Props) {
                                     </Link>
                                 </Button>
                             )}
+                            <CopilotSheet
+                                trigger={
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                    >
+                                        <Sparkles className="size-4" />
+                                        Copiloto
+                                    </Button>
+                                }
+                            />
                         </>
                     }
                 />

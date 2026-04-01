@@ -2,6 +2,7 @@
 
 use App\Models\User;
 use Database\Seeders\AccessModulePermissionsSeeder;
+use Database\Seeders\AiCopilotPermissionsSeeder;
 use Database\Seeders\AuditModulePermissionsSeeder;
 use Database\Seeders\DatabaseSeeder;
 use Database\Seeders\RolesAndPermissionsSeeder;
@@ -29,19 +30,19 @@ test('database seeder keeps deterministic administrator scoped to development en
     expect(User::query()->where('email', 'test@mailinator.com')->count())->toBe(0);
 });
 
-test('database seeder creates expected super-admin role and 16 permissions', function () {
+test('database seeder creates expected super-admin role and 18 permissions', function () {
     $this->seed(DatabaseSeeder::class);
 
     expect(Role::where('name', 'super-admin')->exists())->toBeTrue()
-        ->and(Permission::count())->toBe(16);
+        ->and(Permission::count())->toBe(18);
 });
 
-test('repeated database seeder run preserves exactly 1 role and 16 permissions without duplicates', function () {
+test('repeated database seeder run preserves exactly 1 role and 18 permissions without duplicates', function () {
     $this->seed(DatabaseSeeder::class);
     $this->seed(DatabaseSeeder::class);
 
     expect(Role::where('name', 'super-admin')->count())->toBe(1)
-        ->and(Permission::count())->toBe(16);
+        ->and(Permission::count())->toBe(18);
 });
 
 test('database seeder keeps the core call order including the audit module seeder', function () {
@@ -68,5 +69,6 @@ test('database seeder keeps the core call order including the audit module seede
         RolesAndPermissionsSeeder::class,
         AccessModulePermissionsSeeder::class,
         AuditModulePermissionsSeeder::class,
+        AiCopilotPermissionsSeeder::class,
     ]);
 });
