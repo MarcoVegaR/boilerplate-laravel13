@@ -11,6 +11,7 @@ use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Laravel\Ai\Concerns\RemembersConversations;
 use Laravel\Ai\Prompts\AgentPrompt;
@@ -668,8 +669,7 @@ it('denies continuing another users conversation', function () {
 
 it('logs summarized observability data without leaking prompts or raw payloads', function () {
     $user = authorizedCopilotOperator();
-    $logPath = storage_path('logs/laravel.log');
-    $before = file_exists($logPath) ? file_get_contents($logPath) : '';
+    Log::spy();
 
     Context::add('correlation_id', 'copilot-test-correlation');
 
@@ -687,20 +687,28 @@ it('logs summarized observability data without leaking prompts or raw payloads',
     $response->assertSuccessful();
 
     $conversationId = $response->json('conversation_id');
-    $after = file_get_contents($logPath);
-    $delta = $after === false ? '' : substr($after, strlen($before));
 
-    expect($delta)->toContain('ai-copilot.users.usage')
-        ->toContain('"actor_id":'.$user->id)
-        ->toContain('"module":"users"')
-        ->toContain('"channel":"web"')
-        ->toContain('"correlation_id":')
-        ->not->toContain('Necesito revisar al usuario secreto@example.com')
-        ->not->toContain('Resumen operativo seguro.')
-        ->not->toContain('"prompt"')
-        ->not->toContain('"response"')
-        ->not->toContain('"raw_payload"')
-        ->not->toContain('"password"');
+    Log::shouldHaveReceived('info')
+        ->once()
+        ->withArgs(function (string $message, array $context) use ($user): bool {
+            expect($message)->toBe('ai-copilot.users.usage')
+                ->and($context['actor_id'] ?? null)->toBe($user->id)
+                ->and($context['module'] ?? null)->toBe('users')
+                ->and($context['channel'] ?? null)->toBe('web')
+                ->and($context['correlation_id'] ?? null)->toBeString()->not->toBe('')
+                ->and($context)->not->toHaveKey('prompt')
+                ->and($context)->not->toHaveKey('response')
+                ->and($context)->not->toHaveKey('raw_payload');
+
+            $serialized = json_encode($context, JSON_THROW_ON_ERROR);
+
+            expect($serialized)
+                ->not->toContain('Necesito revisar al usuario secreto@example.com')
+                ->not->toContain('Resumen operativo seguro.')
+                ->not->toContain('"password"');
+
+            return true;
+        });
 
     expect($conversationId)->not->toBeEmpty();
 
