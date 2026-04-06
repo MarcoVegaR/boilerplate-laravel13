@@ -107,16 +107,6 @@ export function CopilotActionCard({
                         </div>
                     )}
 
-                {action.required_permissions.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                        {action.required_permissions.map((permission) => (
-                            <Badge key={permission} variant="outline">
-                                {permission}
-                            </Badge>
-                        ))}
-                    </div>
-                )}
-
                 {action.deny_reason && (
                     <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                         {action.deny_reason}

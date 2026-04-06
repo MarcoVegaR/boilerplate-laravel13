@@ -2,6 +2,7 @@
 
 namespace App\Ai\Tools\System\Users;
 
+use App\Ai\Support\UsersCopilotDomainLexicon;
 use App\Models\User;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -14,6 +15,8 @@ use Stringable;
 
 class SearchUsersTool implements Tool
 {
+    protected const RESULT_LIMIT = 8;
+
     public function __construct(protected User $actor) {}
 
     public function description(): Stringable|string
@@ -50,16 +53,72 @@ class SearchUsersTool implements Tool
             ->when($request->has('email_verified'), fn (Builder $builder) => $request->boolean('email_verified')
                 ? $builder->whereNotNull('email_verified_at')
                 : $builder->whereNull('email_verified_at'))
+            ->when($request->has('two_factor_enabled'), fn (Builder $builder) => $request->boolean('two_factor_enabled')
+                ? $builder->whereNotNull('two_factor_confirmed_at')
+                : $builder->whereNull('two_factor_confirmed_at'))
             ->when($request->has('has_roles'), fn (Builder $builder) => $request->boolean('has_roles')
                 ? $builder->whereHas('roles')
                 : $builder->whereDoesntHave('roles'))
-            ->orderByDesc('created_at')
-            ->limit(8)
+            ->when($request->string('role')->trim()->value(), function (Builder $builder, string $role): void {
+                $terms = UsersCopilotDomainLexicon::roleSearchTerms($role);
+                $useUnaccent = DB::connection()->getDriverName() === 'pgsql';
+                $wrap = fn (string $column): string => $useUnaccent
+                    ? "unaccent(LOWER({$column})) LIKE unaccent(?)"
+                    : "LOWER({$column}) LIKE ?";
+
+                $builder->whereHas('roles', function (Builder $nested) use ($terms, $wrap): void {
+                    $nested->where(function (Builder $roleQuery) use ($terms, $wrap): void {
+                        foreach ($terms as $term) {
+                            if (in_array($term, ['admin', 'super-admin'], true)) {
+                                $roleQuery->orWhereRaw('LOWER(display_name) = ?', [mb_strtolower($term)])
+                                    ->orWhereRaw('LOWER(name) = ?', [mb_strtolower($term)]);
+
+                                continue;
+                            }
+
+                            $like = '%'.mb_strtolower($term).'%';
+
+                            $roleQuery->orWhereRaw($wrap('display_name'), [$like])
+                                ->orWhereRaw($wrap('name'), [$like]);
+                        }
+                    });
+                });
+            })
+            ->when($request->string('access_profile')->trim()->value(), function (Builder $builder, string $profile): void {
+                match ($profile) {
+                    'administrative_access' => $builder->administrativeAccess(),
+                    'super_admin_role' => $builder->withSuperAdminRole(),
+                    default => $builder,
+                };
+            })
+            ->when($request->string('permission')->trim()->value(), function (Builder $builder, string $permission): void {
+                $builder->whereHas('roles', fn (Builder $roleQuery) => $roleQuery
+                    ->where('is_active', true)
+                    ->whereHas('permissions', fn (Builder $permissionQuery) => $permissionQuery->where('name', $permission))
+                );
+            })
+            ->orderByDesc('created_at');
+
+        $matchingCount = (clone $query)->count();
+        $results = $query
+            ->limit(self::RESULT_LIMIT)
             ->get();
 
+        $visibleCount = $results->count();
+
         return json_encode([
-            'count' => $query->count(),
-            'users' => $query->map(fn (User $user): array => [
+            'count' => $visibleCount,
+            'visible_count' => $visibleCount,
+            'matching_count' => $matchingCount,
+            'truncated' => $matchingCount > $visibleCount,
+            'limit' => self::RESULT_LIMIT,
+            'count_represents' => 'visible_results',
+            'list_semantics' => 'search_results_only',
+            'aggregate_safe' => false,
+            'access_profile' => $request->string('access_profile')->trim()->value() ?: null,
+            'permission' => $request->string('permission')->trim()->value() ?: null,
+            'two_factor_enabled' => $request->has('two_factor_enabled') ? $request->boolean('two_factor_enabled') : null,
+            'users' => $results->map(fn (User $user): array => [
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
@@ -91,7 +150,11 @@ class SearchUsersTool implements Tool
             'query' => $schema->string()->nullable(),
             'status' => $schema->string()->enum(['active', 'inactive', 'all'])->default('all'),
             'email_verified' => $schema->boolean()->nullable(),
+            'two_factor_enabled' => $schema->boolean()->nullable(),
             'has_roles' => $schema->boolean()->nullable(),
+            'role' => $schema->string()->nullable(),
+            'access_profile' => $schema->string()->enum(['administrative_access', 'super_admin_role'])->nullable(),
+            'permission' => $schema->string()->nullable(),
         ];
     }
 }

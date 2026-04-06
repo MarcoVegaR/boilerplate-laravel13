@@ -105,6 +105,10 @@ it('shows the copilot entrypoint, filters empty state prompts, and disables conf
                     'required_permissions' => ['system.users.send-reset', 'system.users-copilot.execute'],
                 ],
             ],
+            'meta' => [
+                'capability_key' => 'users.actions.send_reset',
+                'response_source' => 'native_tools',
+            ],
         ]),
     ]);
 
@@ -126,6 +130,10 @@ it('shows the copilot entrypoint, filters empty state prompts, and disables conf
         ->assertSee('Puedo proponer el restablecimiento, pero esta propuesta no es ejecutable todavía.')
         ->assertSee('Solo propuesta')
         ->assertButtonDisabled('@copilot-action-send_reset')
+        ->assertDontSee('system.users.send-reset')
+        ->assertDontSee('system.users-copilot.execute')
+        ->assertDontSee('users.actions.send_reset')
+        ->assertDontSee('native_tools')
         ->assertNoJavaScriptErrors();
 });
 

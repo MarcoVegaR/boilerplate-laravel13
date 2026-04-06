@@ -156,7 +156,7 @@ export function CopilotPanel({ subjectUser }: CopilotPanelProps) {
                             Boolean(copilot?.can_execute) && canExecuteCopilot
                         }
                         subjectUser={subjectUser}
-                        onSelectPrompt={(prompt) => setDraft(prompt)}
+                        onSelectPrompt={(prompt) => submitPrompt(prompt)}
                     />
                 ) : (
                     <>

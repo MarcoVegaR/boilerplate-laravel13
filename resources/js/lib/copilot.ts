@@ -14,6 +14,22 @@ export type CopilotReference = {
     href: string | null;
 };
 
+export type CopilotIntent =
+    | 'help'
+    | 'metrics'
+    | 'search_results'
+    | 'user_context'
+    | 'action_proposal'
+    | 'ambiguous'
+    | 'out_of_scope'
+    | 'error';
+
+export type CopilotResponseSource =
+    | 'native_tools'
+    | 'local_orchestrator'
+    | 'gemini_local_orchestrator'
+    | 'fallback';
+
 export type CopilotActionType =
     | 'activate'
     | 'deactivate'
@@ -91,6 +107,10 @@ export type CopilotSearchResultsCard = {
     summary: string | null;
     data: {
         count: number;
+        visible_count?: number;
+        matching_count?: number;
+        truncated?: boolean;
+        applied_filters?: Record<string, unknown> | null;
         users: CopilotSearchResultUser[];
     };
 };
@@ -136,6 +156,40 @@ export type CopilotUserContextCard = {
     };
 };
 
+export type CopilotMetricsCard = {
+    kind: 'metrics';
+    title: string | null;
+    summary: string | null;
+    data: {
+        capability_key: string | null;
+        metric: {
+            label: string | null;
+            value: number | null;
+            unit: 'users' | 'roles';
+        };
+        breakdown: Array<{
+            key: string;
+            label: string;
+            value: number;
+        }>;
+        applied_filters: Record<string, unknown> | null;
+    };
+};
+
+export type CopilotClarificationCard = {
+    kind: 'clarification';
+    title: string | null;
+    summary: string | null;
+    data: {
+        reason: string;
+        question: string;
+        options: Array<{
+            label: string;
+            value: string;
+        }>;
+    };
+};
+
 export type CopilotNoticeCard = {
     kind: 'notice';
     title: string | null;
@@ -146,18 +200,13 @@ export type CopilotNoticeCard = {
 export type CopilotCard =
     | CopilotNoticeCard
     | CopilotSearchResultsCard
-    | CopilotUserContextCard;
+    | CopilotUserContextCard
+    | CopilotMetricsCard
+    | CopilotClarificationCard;
 
 export type CopilotResponse = {
     answer: string;
-    intent:
-        | 'help'
-        | 'inform'
-        | 'search_results'
-        | 'user_context'
-        | 'action_proposal'
-        | 'out_of_scope'
-        | 'error';
+    intent: CopilotIntent;
     cards: CopilotCard[];
     actions: CopilotActionProposal[];
     requires_confirmation: boolean;
@@ -167,6 +216,10 @@ export type CopilotResponse = {
         channel: string;
         subject_user_id: number | null;
         fallback: boolean;
+        capability_key: string | null;
+        intent_family: string | null;
+        conversation_state_version: number | null;
+        response_source: CopilotResponseSource;
         diagnostics: Record<string, unknown> | null;
     };
 };

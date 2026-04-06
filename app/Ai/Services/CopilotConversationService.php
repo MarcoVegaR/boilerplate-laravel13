@@ -5,6 +5,8 @@ namespace App\Ai\Services;
 use App\Ai\Agents\System\UsersCopilotAgent;
 use App\Ai\Agents\System\UsersGeminiCopilotAgent;
 use App\Ai\Support\BaseCopilotAgent;
+use App\Ai\Support\CopilotActionType;
+use App\Ai\Support\CopilotConversationSnapshot;
 use App\Ai\Support\CopilotProviderProfile;
 use App\Ai\Support\CopilotStructuredOutput;
 use App\Ai\Testing\BrowserCopilotFakeTransport;
@@ -23,6 +25,9 @@ class CopilotConversationService
         protected DatabaseManager $database,
         protected BrowserCopilotFakeTransport $browserFakeTransport,
         protected UsersGeminiCapabilityOrchestrator $usersGeminiCapabilityOrchestrator,
+        protected UsersCopilotRequestPlanner $usersCopilotRequestPlanner,
+        protected UsersCopilotCapabilityExecutor $usersCopilotCapabilityExecutor,
+        protected UsersCopilotResponseBuilder $usersCopilotResponseBuilder,
     ) {}
 
     /**
@@ -46,8 +51,19 @@ class CopilotConversationService
 
         $this->assertConversationOwnership($conversationId, $actor);
 
+        $snapshot = $this->loadSnapshot($conversationId);
+        $plan = $this->usersCopilotRequestPlanner->plan($prompt, $snapshot, $subjectUser);
+        $agent = $this->makeAgent($actor, $subjectUser, $plan, $snapshot);
+
+        $executionResult = $this->plannedExecutionResult($actor, $plan);
+
         try {
             if ($payload = $this->resolveBrowserFakeResponse($subjectUser?->id)) {
+                $this->persistSnapshot(
+                    $conversationId,
+                    $this->usersCopilotResponseBuilder->nextSnapshot($snapshot, $plan, $payload, $executionResult),
+                );
+
                 $this->storeUserMessage($conversationId, $actor, $prompt, $agent);
                 $this->storeAssistantPayloadMessage($conversationId, $actor, $payload, $agent, 'browser_file');
 
@@ -58,14 +74,59 @@ class CopilotConversationService
             }
 
             if ($agent instanceof UsersGeminiCopilotAgent) {
-                return $this->respondWithGeminiOrchestrator($agent, $actor, $prompt, $conversationId, $subjectUser?->id);
+                return $this->respondWithGeminiOrchestrator(
+                    $agent,
+                    $actor,
+                    $prompt,
+                    $conversationId,
+                    $subjectUser?->id,
+                    $plan,
+                    $snapshot,
+                    $executionResult,
+                );
+            }
+
+            if ($this->shouldBypassProvider($executionResult)) {
+                $payload = $this->usersCopilotResponseBuilder->build(
+                    plan: $plan,
+                    snapshot: $snapshot,
+                    executionResult: $executionResult,
+                    providerPayload: null,
+                    responseSource: 'native_tools',
+                    subjectUserId: $subjectUser?->id,
+                );
+
+                $this->persistSnapshot(
+                    $conversationId,
+                    $this->usersCopilotResponseBuilder->nextSnapshot($snapshot, $plan, $payload, $executionResult),
+                );
+
+                $this->storeUserMessage($conversationId, $actor, $prompt, $agent);
+                $this->storeAssistantPayloadMessage($conversationId, $actor, $payload, $agent, 'native_tools');
+
+                return [
+                    'conversation_id' => $conversationId,
+                    'response' => $payload,
+                ];
             }
 
             $response = $agent
                 ->continue($conversationId, as: $actor)
                 ->prompt($prompt);
 
-            $payload = $this->normalizeResponse($response, $subjectUser?->id);
+            $payload = $this->usersCopilotResponseBuilder->build(
+                plan: $plan,
+                snapshot: $snapshot,
+                executionResult: $executionResult,
+                providerPayload: $this->normalizeResponse($response, $subjectUser?->id),
+                responseSource: 'native_tools',
+                subjectUserId: $subjectUser?->id,
+            );
+
+            $this->persistSnapshot(
+                $conversationId,
+                $this->usersCopilotResponseBuilder->nextSnapshot($snapshot, $plan, $payload, $executionResult),
+            );
 
             $this->storeUserMessage($conversationId, $actor, $prompt, $agent);
             $this->storeAssistantMessage($conversationId, $actor, $response, $agent);
@@ -103,9 +164,39 @@ class CopilotConversationService
         string $prompt,
         string $conversationId,
         ?int $subjectUserId,
+        array $plan,
+        CopilotConversationSnapshot $snapshot,
+        ?array $executionResult,
     ): array {
-        $orchestration = $this->usersGeminiCapabilityOrchestrator->prepare($agent, $prompt);
+        $orchestration = $this->usersGeminiCapabilityOrchestrator->prepare(
+            $agent,
+            $prompt,
+            $plan,
+            $snapshot,
+            $executionResult,
+        );
         $diagnostics = [];
+
+        if (mb_strlen($orchestration['prompt']) > (int) config('ai-copilot.limits.prompt_length', 4000)) {
+            $payload = $this->usersGeminiCapabilityOrchestrator->finalizePayload(
+                $orchestration['payload'],
+                null,
+                ['formatter_result' => 'skipped_prompt_length'],
+            );
+
+            $this->persistSnapshot(
+                $conversationId,
+                $this->usersCopilotResponseBuilder->nextSnapshot($snapshot, $plan, $payload, $executionResult),
+            );
+
+            $this->storeUserMessage($conversationId, $actor, $prompt, $agent);
+            $this->storeAssistantPayloadMessage($conversationId, $actor, $payload, $agent, 'gemini_local_orchestrator');
+
+            return [
+                'conversation_id' => $conversationId,
+                'response' => $payload,
+            ];
+        }
 
         try {
             $response = $agent
@@ -133,6 +224,11 @@ class CopilotConversationService
             $diagnostics,
         );
 
+        $this->persistSnapshot(
+            $conversationId,
+            $this->usersCopilotResponseBuilder->nextSnapshot($snapshot, $plan, $payload, $executionResult),
+        );
+
         $this->storeUserMessage($conversationId, $actor, $prompt, $agent);
         $this->storeAssistantPayloadMessage($conversationId, $actor, $payload, $agent, 'gemini_local_orchestrator');
 
@@ -150,6 +246,7 @@ class CopilotConversationService
             'id' => $conversationId,
             'user_id' => $actor->id,
             'title' => $agent->conversationTitleFor($prompt),
+            ...CopilotConversationSnapshot::empty()->toDatabase(),
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -265,11 +362,122 @@ class CopilotConversationService
             ->update(['updated_at' => now()]);
     }
 
-    protected function makeAgent(User $actor, ?User $subjectUser): BaseCopilotAgent
-    {
+    /**
+     * @param  array<string, mixed>|null  $planningContext
+     */
+    protected function makeAgent(
+        User $actor,
+        ?User $subjectUser,
+        ?array $planningContext = null,
+        ?CopilotConversationSnapshot $snapshot = null,
+    ): BaseCopilotAgent {
         return CopilotProviderProfile::forProvider(config('ai-copilot.providers.default', config('ai.default')))->usesStructuredResponses()
-            ? new UsersCopilotAgent($actor, $subjectUser)
-            : new UsersGeminiCopilotAgent($actor, $subjectUser);
+            ? new UsersCopilotAgent($actor, $subjectUser, planningContext: $planningContext, conversationSnapshot: $snapshot)
+            : new UsersGeminiCopilotAgent($actor, $subjectUser, planningContext: $planningContext, conversationSnapshot: $snapshot);
+    }
+
+    protected function loadSnapshot(string $conversationId): CopilotConversationSnapshot
+    {
+        $conversation = $this->database->table('agent_conversations')
+            ->select(['snapshot', 'snapshot_version'])
+            ->where('id', $conversationId)
+            ->first();
+
+        return CopilotConversationSnapshot::fromDatabase(
+            $conversation?->snapshot,
+            $conversation?->snapshot_version,
+        );
+    }
+
+    protected function persistSnapshot(string $conversationId, CopilotConversationSnapshot $snapshot): void
+    {
+        $this->database->table('agent_conversations')
+            ->where('id', $conversationId)
+            ->update([
+                ...$snapshot->toDatabase(),
+                'updated_at' => now(),
+            ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $plan
+     * @return array<string, mixed>|null
+     */
+    protected function plannedExecutionResult(User $actor, array $plan): ?array
+    {
+        $capabilityKey = $plan['capability_key'] ?? null;
+
+        if ($capabilityKey === 'users.mixed.metrics_search') {
+            return $this->usersCopilotCapabilityExecutor->executeMixedMetricsSearch(
+                $actor,
+                is_array($plan['filters'] ?? null) ? $plan['filters'] : [],
+            );
+        }
+
+        if ($capabilityKey === 'users.search') {
+            return $this->usersCopilotCapabilityExecutor->executeSearch(
+                $actor,
+                is_array($plan['filters'] ?? null) ? $plan['filters'] : [],
+            );
+        }
+
+        if ($capabilityKey === 'users.roles.catalog') {
+            return $this->usersCopilotCapabilityExecutor->executeRolesCatalog();
+        }
+
+        if ($capabilityKey === 'users.detail' && is_numeric(data_get($plan, 'resolved_entity.id'))) {
+            return $this->usersCopilotCapabilityExecutor->executeDetail(
+                $actor,
+                (int) data_get($plan, 'resolved_entity.id'),
+            );
+        }
+
+        if ($capabilityKey === 'users.explain.permission'
+            && is_numeric(data_get($plan, 'resolved_entity.id'))
+            && is_string(data_get($plan, 'filters.permission'))) {
+            return $this->usersCopilotCapabilityExecutor->executePermissionExplanation(
+                $actor,
+                (int) data_get($plan, 'resolved_entity.id'),
+                (string) data_get($plan, 'filters.permission'),
+            );
+        }
+
+        if ($capabilityKey === 'users.explain.action'
+            && is_numeric(data_get($plan, 'resolved_entity.id'))
+            && is_numeric(data_get($plan, 'filters.target_user_id'))
+            && is_string(data_get($plan, 'filters.action_type'))) {
+            return $this->usersCopilotCapabilityExecutor->executeActionExplanation(
+                $actor,
+                (int) data_get($plan, 'resolved_entity.id'),
+                (int) data_get($plan, 'filters.target_user_id'),
+                CopilotActionType::from((string) data_get($plan, 'filters.action_type')),
+            );
+        }
+
+        if ($capabilityKey === 'users.explain.capabilities_summary'
+            && is_numeric(data_get($plan, 'resolved_entity.id'))) {
+            return $this->usersCopilotCapabilityExecutor->executeCapabilitiesSummary(
+                $actor,
+                (int) data_get($plan, 'resolved_entity.id'),
+            );
+        }
+
+        if (is_string($capabilityKey)
+            && str_starts_with($capabilityKey, 'users.actions.')
+            && $capabilityKey !== 'users.actions.create_user'
+            && is_numeric(data_get($plan, 'resolved_entity.id'))) {
+            return $this->usersCopilotCapabilityExecutor->executeActionProposal(
+                $actor,
+                $capabilityKey,
+                (int) data_get($plan, 'resolved_entity.id'),
+            );
+        }
+
+        if (! is_string($capabilityKey) || ! in_array($capabilityKey, UsersCopilotCapabilityCatalog::aggregateKeys(), true)) {
+            return null;
+        }
+
+        return $this->usersCopilotCapabilityExecutor->execute($capabilityKey);
     }
 
     /**
@@ -289,5 +497,15 @@ class CopilotConversationService
             diagnostics: ['reason' => 'invalid_browser_fake_transport'],
             subjectUserId: $subjectUserId,
         );
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $executionResult
+     */
+    protected function shouldBypassProvider(?array $executionResult): bool
+    {
+        $family = $executionResult['family'] ?? null;
+
+        return in_array($family, ['aggregate', 'list', 'detail', 'action', 'mixed', 'explain'], true);
     }
 }

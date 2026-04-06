@@ -2,6 +2,7 @@
 
 namespace App\Ai\Support;
 
+use App\Ai\Services\UsersCopilotCapabilityCatalog;
 use Illuminate\Support\Arr;
 
 final class CopilotProviderProfile
@@ -44,5 +45,22 @@ final class CopilotProviderProfile
     public function usesTextJsonResponses(): bool
     {
         return $this->responseMode === self::RESPONSE_MODE_TEXT_JSON;
+    }
+
+    public function supportsNativeCapabilityPlanning(): bool
+    {
+        return $this->usesStructuredResponses() && $this->supportsToolsWithStructuredOutput;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $planningContext
+     */
+    public function shouldPreferDeterministicMetricsTool(?array $planningContext): bool
+    {
+        if (! $this->supportsNativeCapabilityPlanning()) {
+            return false;
+        }
+
+        return in_array($planningContext['capability_key'] ?? null, UsersCopilotCapabilityCatalog::aggregateKeys(), true);
     }
 }

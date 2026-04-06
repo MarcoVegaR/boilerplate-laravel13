@@ -3,6 +3,7 @@
 use App\Ai\Tools\System\Users\CreateUserTool;
 use App\Ai\Tools\System\Users\DeactivateUserTool;
 use App\Ai\Tools\System\Users\GetUserDetailTool;
+use App\Ai\Tools\System\Users\GetUsersMetricsTool;
 use App\Ai\Tools\System\Users\SearchUsersTool;
 use App\Models\Role;
 use App\Models\User;
@@ -179,6 +180,50 @@ it('builds a deactivate proposal without mutating state', function () {
         ->and($target->is_active)->toBeTrue();
 });
 
+it('filters users by role name using the role parameter', function () {
+    $actor = actorWithUsersViewPermission();
+    $role = Role::factory()->active()->create(['display_name' => 'Auditor']);
+
+    $matchingUser = User::factory()->active()->create(['name' => 'Ana Auditora']);
+    $matchingUser->assignRole($role);
+
+    User::factory()->active()->create(['name' => 'Carlos Sin Rol']);
+
+    $result = json_decode((new SearchUsersTool($actor))->handle(new ToolRequest([
+        'role' => 'auditor',
+    ])), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($result['count'])->toBe(1)
+        ->and($result['users'][0]['name'])->toBe('Ana Auditora');
+});
+
+it('returns empty results when role filter matches no users', function () {
+    $actor = actorWithUsersViewPermission();
+
+    User::factory()->active()->create(['name' => 'Ana Activa']);
+
+    $result = json_decode((new SearchUsersTool($actor))->handle(new ToolRequest([
+        'role' => 'rol-inexistente',
+    ])), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($result['count'])->toBe(0)
+        ->and($result['users'])->toBe([]);
+});
+
+it('searches users by name using the query parameter', function () {
+    $actor = actorWithUsersViewPermission();
+
+    User::factory()->active()->create(['name' => 'Daniel Query Unique', 'email' => 'daniel@example.com']);
+    User::factory()->active()->create(['name' => 'Ana Activa', 'email' => 'ana@example.com']);
+
+    $result = json_decode((new SearchUsersTool($actor))->handle(new ToolRequest([
+        'query' => 'Daniel Query Unique',
+    ])), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($result['count'])->toBe(1)
+        ->and($result['users'][0]['name'])->toBe('Daniel Query Unique');
+});
+
 it('returns executable create user proposals without mutating state', function () {
     $actor = actorWithCopilotExecutionPermissions();
     $role = Role::factory()->active()->create([
@@ -196,4 +241,66 @@ it('returns executable create user proposals without mutating state', function (
         ->and($result['action']['can_execute'])->toBeTrue()
         ->and($result['action']['payload']['roles'])->toBe([$role->id])
         ->and(User::query()->where('email', 'laura@example.com')->exists())->toBeFalse();
+});
+
+it('returns deterministic aggregate metrics through the native metrics tool', function () {
+    $actor = User::factory()->create();
+    $actor->givePermissionTo('system.users.view');
+
+    $ops = Role::factory()->active()->create(['name' => 'ops', 'display_name' => 'Operaciones']);
+    $support = Role::factory()->active()->create(['name' => 'support', 'display_name' => 'Soporte']);
+
+    User::factory()->active()->create()->assignRole($ops);
+    User::factory()->inactive()->create()->assignRole($ops);
+    User::factory()->active()->unverified()->create()->assignRole($support);
+    User::factory()->inactive()->unverified()->create();
+
+    $result = json_decode((new GetUsersMetricsTool($actor))->handle(new ToolRequest([
+        'metric' => 'role_distribution',
+    ])), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($result)
+        ->toMatchArray([
+            'capability_key' => 'users.metrics.role_distribution',
+            'family' => 'aggregate',
+            'outcome' => 'ok',
+        ])
+        ->and($result['answer_facts']['metric'])
+        ->toBe([
+            'label' => 'Roles con usuarios asignados',
+            'value' => 2,
+            'unit' => 'roles',
+        ])
+        ->and($result['answer_facts']['breakdown'])
+        ->toBe([
+            ['key' => 'ops', 'label' => 'Operaciones', 'value' => 2],
+            ['key' => 'support', 'label' => 'Soporte', 'value' => 1],
+        ])
+        ->and($result['diagnostics'])
+        ->toMatchArray([
+            'executor' => 'users_capability_executor',
+            'source_of_truth' => 'deterministic_backend',
+        ]);
+});
+
+it('keeps search tool metadata explicitly list scoped and truncated', function () {
+    $actor = User::factory()->create();
+    $actor->givePermissionTo('system.users.view');
+
+    User::factory()->count(9)->create();
+
+    $result = json_decode((new SearchUsersTool($actor))->handle(new ToolRequest([])), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($result)
+        ->toMatchArray([
+            'count' => 8,
+            'visible_count' => 8,
+            'matching_count' => 10,
+            'truncated' => true,
+            'limit' => 8,
+            'count_represents' => 'visible_results',
+            'list_semantics' => 'search_results_only',
+            'aggregate_safe' => false,
+        ])
+        ->and($result['users'])->toHaveCount(8);
 });

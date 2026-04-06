@@ -142,6 +142,39 @@ class User extends Authenticatable implements Auditable, MustVerifyEmail
     }
 
     /**
+     * Scope users with effective administrative access.
+     *
+     * Administrative access means an active user holding at least one active role
+     * that grants the minimum admin trio, or the active `super-admin` role.
+     */
+    public function scopeAdministrativeAccess(Builder $query): Builder
+    {
+        return $query
+            ->where('is_active', true)
+            ->where(function (Builder $builder): void {
+                $builder
+                    ->whereHas('roles', fn (Builder $q) => $q
+                        ->where('is_active', true)
+                        ->where('name', 'super-admin'))
+                    ->orWhereHas('roles', fn (Builder $q) => $q
+                        ->where('is_active', true)
+                        ->whereHas('permissions', fn (Builder $pq) => $pq->where('name', 'system.users.view'))
+                        ->whereHas('permissions', fn (Builder $pq) => $pq->where('name', 'system.users.assign-role'))
+                        ->whereHas('permissions', fn (Builder $pq) => $pq->where('name', 'system.roles.view')));
+            });
+    }
+
+    /**
+     * Scope users with the active super-admin role assigned.
+     */
+    public function scopeWithSuperAdminRole(Builder $query): Builder
+    {
+        return $query->whereHas('roles', fn (Builder $q) => $q
+            ->where('is_active', true)
+            ->where('name', 'super-admin'));
+    }
+
+    /**
      * Override A: Return all permissions the user has via roles, filtering out
      * permissions from inactive roles.
      *

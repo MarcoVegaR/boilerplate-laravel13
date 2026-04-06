@@ -8,6 +8,7 @@ class UsersCopilotPrompt
     {
         $profileInstructions = self::profileInstructions($profile);
         $capabilityInstructions = self::capabilityInstructions($profile);
+        $planningInstructions = self::planningInstructions($agent, $profile);
 
         return trim(<<<PROMPT
 Eres el copiloto del modulo de usuarios.
@@ -24,6 +25,8 @@ Reglas operativas:
 - Si no hay resultados suficientes, explica que faltan datos concretos y pide el criterio minimo necesario.
 
 {$capabilityInstructions}
+
+{$planningInstructions}
 
 Seguridad:
 - Respeta siempre los permisos reales del actor.
@@ -53,10 +56,55 @@ PROMPT;
         }
 
         return <<<'PROMPT'
+- Para metricas agregadas canonicas como total, activos, inactivos, verificados, sin roles, distribucion de roles o rol mas comun, usa GetUsersMetricsTool.
+- Nunca uses SearchUsersTool para responder metricas agregadas ni totales globales.
 - Para consultas sobre usuarios inactivos, no verificados, sin roles, con 2FA o con filtros operativos, usa SearchUsersTool antes de responder.
+- Para buscar usuarios por nombre, apellido o correo, usa SearchUsersTool con el parametro query antes de responder.
+- Para buscar usuarios por rol o perfil, usa SearchUsersTool con el parametro role antes de responder.
+- Para listados y busquedas, usa como maximo una llamada a SearchUsersTool y despues devuelve la respuesta final.
 - Para explicar el estado de un usuario concreto o ampliar un resultado previo, usa GetUserDetailTool antes de responder.
-- Cuando el usuario pida activar, desactivar, enviar restablecimiento o preparar un alta guiada, usa la herramienta correspondiente para proponer la accion.
+- Cuando el usuario pida activar, desactivar, enviar restablecimiento o preparar un alta guiada (incluyendo comandos directos como "desactiva", "activa", "restablece"), usa la herramienta correspondiente para proponer la accion.
+- Si una busqueda no devuelve resultados, informa claramente que no se encontraron coincidencias. No respondas con capacidades genericas.
 PROMPT;
+    }
+
+    protected static function planningInstructions(BaseCopilotAgent $agent, CopilotProviderProfile $profile): string
+    {
+        if (! method_exists($agent, 'planningContext')) {
+            return '';
+        }
+
+        $planningContext = $agent->planningContext();
+
+        if (! is_array($planningContext)) {
+            return '';
+        }
+
+        $requestNormalization = $planningContext['request_normalization'] ?? '';
+        $intentFamily = $planningContext['intent_family'] ?? 'help';
+        $capabilityKey = $planningContext['capability_key'] ?? 'users.help';
+
+        if ($profile->usesTextJsonResponses()) {
+            return trim(<<<PROMPT
+Planificacion backend obligatoria:
+- request_normalization="{$requestNormalization}"
+- intent_family={$intentFamily}
+- capability_key={$capabilityKey}
+- El backend ya resolvio la capacidad canonica y construira o reparara el payload final.
+- Si recibes un JSON base, preserva capability_key, intent_family, cards, actions, references y meta.
+- Si falta contexto o hay ambiguedad, reflejalo de forma consistente con el payload canonico en vez de inventar otra ruta.
+PROMPT);
+        }
+
+        return trim(<<<PROMPT
+Planificacion backend obligatoria:
+- request_normalization="{$requestNormalization}"
+- intent_family={$intentFamily}
+- capability_key={$capabilityKey}
+- Respeta esta capacidad canonica y no la sustituyas por otra ruta.
+- Si la capacidad es agregada, usa solo GetUsersMetricsTool y no uses SearchUsersTool.
+- Si falta contexto o hay ambiguedad, pide aclaracion en vez de adivinar.
+PROMPT);
     }
 
     protected static function profileInstructions(CopilotProviderProfile $profile): string

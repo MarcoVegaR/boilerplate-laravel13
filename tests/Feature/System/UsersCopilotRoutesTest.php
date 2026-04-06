@@ -139,11 +139,133 @@ it('returns a real read-only message envelope and persists the conversation', fu
     expect($conversationId)->not->toBeEmpty()
         ->and(DB::table('agent_conversations')->where('id', $conversationId)->value('user_id'))->toBe($user->id)
         ->and(DB::table('agent_conversations')->where('id', $conversationId)->value('title'))->toBe('Busca usuarios inactivos.')
+        ->and(DB::table('agent_conversations')->where('id', $conversationId)->value('snapshot_version'))->toBe(1)
+        ->and(json_decode((string) DB::table('agent_conversations')->where('id', $conversationId)->value('snapshot'), true, flags: JSON_THROW_ON_ERROR))
+        ->toMatchArray([
+            'last_filters' => ['status' => 'inactive'],
+            'last_result_user_ids' => [],
+            'conversation_state_version' => 1,
+        ])
         ->and(DB::table('agent_conversation_messages')->where('conversation_id', $conversationId)->count())->toBe(2);
 
-    UsersCopilotAgent::assertPrompted(function (AgentPrompt $prompt): bool {
-        return $prompt->contains('Busca usuarios inactivos.');
-    });
+    UsersCopilotAgent::assertNeverPrompted();
+});
+
+it('binds native aggregate prompts to deterministic metrics planning instead of search semantics', function () {
+    $user = authorizedCopilotOperator();
+
+    User::factory()->count(2)->active()->create();
+    User::factory()->inactive()->create();
+
+    UsersCopilotAgent::fake([
+        fakeCopilotResponse([
+            'answer' => 'Encontré 1 usuario activo en la búsqueda visible.',
+            'intent' => 'search_results',
+            'cards' => [
+                [
+                    'kind' => 'search_results',
+                    'title' => 'Usuarios activos',
+                    'summary' => 'Resultado visible parcial.',
+                    'data' => [
+                        'count' => 1,
+                        'users' => [],
+                    ],
+                ],
+            ],
+        ]),
+    ])->preventStrayPrompts();
+
+    $response = $this->actingAs($user)
+        ->postJson(route('system.users.copilot.messages'), [
+            'prompt' => 'Cuantos usuarios activos hay',
+        ]);
+
+    $response->assertSuccessful()
+        ->assertJsonPath('response.intent', 'metrics')
+        ->assertJsonPath('response.answer', 'Hay 3 usuarios activos.')
+        ->assertJsonPath('response.cards.0.kind', 'metrics')
+        ->assertJsonPath('response.cards.0.data.capability_key', 'users.metrics.active')
+        ->assertJsonPath('response.cards.0.data.metric.value', 3)
+        ->assertJsonPath('response.meta.capability_key', 'users.metrics.active')
+        ->assertJsonPath('response.meta.intent_family', 'read_metrics')
+        ->assertJsonPath('response.meta.response_source', 'native_tools')
+        ->assertJsonPath('response.meta.diagnostics.source_of_truth', 'deterministic_backend');
+
+    $conversationId = $response->json('conversation_id');
+
+    $snapshot = json_decode((string) DB::table('agent_conversations')->where('id', $conversationId)->value('snapshot'), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($snapshot)
+        ->toMatchArray([
+            'last_user_request_normalized' => 'cuantos usuarios activos hay',
+            'last_intent_family' => 'read_metrics',
+            'last_capability_key' => 'users.metrics.active',
+            'last_result_count' => 3,
+        ])
+        ->and(data_get($snapshot, 'last_metrics_snapshot.capability_key'))->toBe('users.metrics.active');
+
+    UsersCopilotAgent::assertNeverPrompted();
+});
+
+it('normalizes malformed openai search result cards before returning them to the frontend', function () {
+    $user = authorizedCopilotOperator();
+
+    UsersCopilotAgent::fake([
+        [
+            'answer' => 'Encontré resultados parciales para revisar.',
+            'intent' => 'search_results',
+            'cards' => [
+                [
+                    'kind' => 'search_results',
+                    'title' => 'Usuarios inactivos',
+                    'summary' => 'Hay resultados parciales.',
+                    'data_json' => json_encode(['count' => 2], JSON_THROW_ON_ERROR),
+                ],
+            ],
+            'actions' => [],
+            'requires_confirmation' => false,
+            'references' => [],
+            'meta' => [
+                'module' => 'users',
+                'channel' => 'web',
+                'subject_user_id' => null,
+                'fallback' => false,
+                'diagnostics_json' => null,
+            ],
+        ],
+    ])->preventStrayPrompts();
+
+    $this->actingAs($user)
+        ->postJson(route('system.users.copilot.messages'), [
+            'prompt' => 'Busca usuarios inactivos.',
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('response.intent', 'search_results')
+        ->assertJsonPath('response.meta.fallback', false)
+        ->assertJsonPath('response.cards.0.kind', 'search_results')
+        ->assertJsonPath('response.cards.0.data.count', 0)
+        ->assertJsonPath('response.cards.0.data.users', []);
+});
+
+it('rebuilds malformed openai search result cards from tool results before returning them', function () {
+    $user = authorizedCopilotOperator();
+
+    User::factory()->inactive()->unverified()->create([
+        'name' => 'Irene Inactiva',
+        'email' => 'irene@example.com',
+    ]);
+
+    $this->actingAs($user)
+        ->postJson(route('system.users.copilot.messages'), [
+            'prompt' => 'Busca usuarios inactivos.',
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('response.intent', 'search_results')
+        ->assertJsonPath('response.meta.fallback', false)
+        ->assertJsonPath('response.cards.0.kind', 'search_results')
+        ->assertJsonPath('response.cards.0.data.count', 1)
+        ->assertJsonPath('response.cards.0.data.users.0.email', 'irene@example.com')
+        ->assertJsonPath('response.meta.diagnostics.search_results_source', 'deterministic_backend');
 });
 
 it('uses the browser fake transport for HTTP copilot requests regardless of provider', function () {
@@ -223,13 +345,133 @@ it('uses local gemini orchestration for inactive-user queries even when formatte
         ->assertJsonPath('response.intent', 'search_results')
         ->assertJsonPath('response.meta.fallback', false)
         ->assertJsonPath('response.meta.module', 'users')
+        ->assertJsonPath('response.meta.capability_key', 'users.search')
+        ->assertJsonPath('response.meta.intent_family', 'read_search')
         ->assertJsonPath('response.cards.0.kind', 'search_results')
         ->assertJsonPath('response.cards.0.data.count', 1)
         ->assertJsonPath('response.cards.0.data.users.0.email', 'irene@example.com');
 
-    expect($response->json('response.meta.diagnostics.execution'))->toBe('local_capability_orchestrator')
-        ->and($response->json('response.meta.diagnostics.capability'))->toBe('inactive_search')
-        ->and($response->json('response.meta.diagnostics.formatter_reason'))->toBe('missing_structured_output');
+    expect($response->json('response.meta.response_source'))->toBe('gemini_local_orchestrator')
+        ->and($response->json('response.meta.diagnostics.source_of_truth'))->toBe('deterministic_backend');
+
+    $conversationId = $response->json('conversation_id');
+    $snapshot = json_decode((string) DB::table('agent_conversations')->where('id', $conversationId)->value('snapshot'), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($snapshot)
+        ->toMatchArray([
+            'last_user_request_normalized' => 'busca usuarios inactivos y resume su estado actual',
+            'last_intent_family' => 'read_search',
+            'last_capability_key' => 'users.search',
+            'last_result_count' => 1,
+        ]);
+});
+
+it('uses canonical deterministic metrics payloads on the gemini path', function () {
+    config()->set('ai-copilot.providers.default', 'gemini');
+
+    $user = authorizedCopilotOperator();
+
+    User::factory()->count(2)->active()->create();
+    User::factory()->inactive()->create();
+
+    UsersGeminiCopilotAgent::fake(['Respuesta plana'])->preventStrayPrompts();
+
+    $response = $this->actingAs($user)
+        ->postJson(route('system.users.copilot.messages'), [
+            'prompt' => 'Cuantos usuarios activos hay',
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('response.intent', 'metrics')
+        ->assertJsonPath('response.answer', 'Hay 3 usuarios activos.')
+        ->assertJsonPath('response.cards.0.kind', 'metrics')
+        ->assertJsonPath('response.cards.0.data.capability_key', 'users.metrics.active')
+        ->assertJsonPath('response.cards.0.data.metric.value', 3)
+        ->assertJsonPath('response.meta.capability_key', 'users.metrics.active')
+        ->assertJsonPath('response.meta.intent_family', 'read_metrics')
+        ->assertJsonPath('response.meta.response_source', 'gemini_local_orchestrator')
+        ->assertJsonPath('response.meta.diagnostics.source_of_truth', 'deterministic_backend')
+        ->assertJsonPath('response.meta.diagnostics.formatter_reason', 'missing_structured_output');
+
+    $conversationId = $response->json('conversation_id');
+    $snapshot = json_decode((string) DB::table('agent_conversations')->where('id', $conversationId)->value('snapshot'), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($snapshot)
+        ->toMatchArray([
+            'last_user_request_normalized' => 'cuantos usuarios activos hay',
+            'last_intent_family' => 'read_metrics',
+            'last_capability_key' => 'users.metrics.active',
+            'last_result_count' => 3,
+        ])
+        ->and(data_get($snapshot, 'last_metrics_snapshot.capability_key'))->toBe('users.metrics.active');
+
+});
+
+it('returns deterministic mixed metrics and filtered search cards in one response', function () {
+    $user = authorizedCopilotOperator();
+    $admin = Role::factory()->active()->create(['name' => 'admin', 'display_name' => 'Admin']);
+    $admin->syncPermissions(['system.users.view', 'system.users.assign-role', 'system.roles.view']);
+    $support = Role::factory()->active()->create(['name' => 'support', 'display_name' => 'Soporte']);
+
+    $firstAdmin = User::factory()->active()->create([
+        'name' => 'Ada Admin',
+        'email' => 'ada-admin@example.com',
+    ]);
+    $firstAdmin->assignRole($admin);
+
+    $secondAdmin = User::factory()->inactive()->create([
+        'name' => 'Ian Admin',
+        'email' => 'ian-admin@example.com',
+    ]);
+    $secondAdmin->assignRole($admin);
+
+    $supportUser = User::factory()->active()->create([
+        'name' => 'Sara Support',
+        'email' => 'sara-support@example.com',
+    ]);
+    $supportUser->assignRole($support);
+
+    UsersCopilotAgent::fake([
+        fakeCopilotResponse([
+            'answer' => 'Respuesta parcial del proveedor.',
+            'cards' => [],
+        ]),
+    ])->preventStrayPrompts();
+
+    $response = $this->actingAs($user)
+        ->postJson(route('system.users.copilot.messages'), [
+            'prompt' => 'lista la cantidad de usuarios activos, inactivos y el rol mas comun y listame que usuarios son admin',
+        ]);
+
+    $response->assertSuccessful()
+        ->assertJsonPath('response.intent', 'search_results')
+        ->assertJsonPath('response.meta.capability_key', 'users.mixed.metrics_search')
+        ->assertJsonPath('response.meta.intent_family', 'read_search')
+        ->assertJsonPath('response.meta.response_source', 'native_tools')
+        ->assertJsonPath('response.meta.diagnostics.source_of_truth', 'deterministic_backend')
+        ->assertJsonPath('response.cards.0.kind', 'metrics')
+        ->assertJsonPath('response.cards.0.data.capability_key', 'users.metrics.combined')
+        ->assertJsonPath('response.cards.1.kind', 'search_results')
+        ->assertJsonPath('response.cards.1.data.matching_count', 1);
+
+    expect($response->json('response.answer'))
+        ->toContain('3 activos y 1 inactivos.')
+        ->toContain('El rol mas comun es Admin con 2 usuarios asignados.')
+        ->toContain('Ademas, encontre 1 usuario con acceso administrativo efectivo.')
+        ->and(collect($response->json('response.cards.1.data.users'))->pluck('name')->all())
+        ->toEqualCanonicalizing(['Ada Admin']);
+
+    $conversationId = $response->json('conversation_id');
+    $snapshot = json_decode((string) DB::table('agent_conversations')->where('id', $conversationId)->value('snapshot'), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($snapshot)
+        ->toMatchArray([
+            'last_user_request_normalized' => 'lista la cantidad de usuarios activos, inactivos y el rol mas comun y listame que usuarios son admin',
+            'last_intent_family' => 'read_search',
+            'last_capability_key' => 'users.mixed.metrics_search',
+            'last_result_count' => 1,
+        ])
+        ->and(data_get($snapshot, 'last_metrics_snapshot.capability_key'))->toBe('users.metrics.combined')
+        ->and(data_get($snapshot, 'last_filters.access_profile'))->toBe('administrative_access');
 });
 
 it('merges gemini formatter text into the deterministic action proposal payload', function () {
@@ -321,6 +563,66 @@ it('prioritizes an explicitly mentioned user over the inactive keyword heuristic
         ->assertJsonPath('response.cards.0.kind', 'user_context')
         ->assertJsonPath('response.cards.0.data.user.email', $target->email)
         ->assertJsonPath('response.meta.fallback', false);
+});
+
+it('resolves explicit email detail prompts through the gemini orchestrator', function () {
+    config()->set('ai-copilot.providers.default', 'gemini');
+    config()->set('ai-copilot.model', 'gemini-2.5-flash-lite');
+
+    $user = authorizedCopilotOperator();
+    $target = User::factory()->active()->create([
+        'name' => 'Test Admin',
+        'email' => 'test@mailinator.com',
+    ]);
+
+    UsersGeminiCopilotAgent::fake(['Respuesta plana'])->preventStrayPrompts();
+
+    $this->actingAs($user)
+        ->postJson(route('system.users.copilot.messages'), [
+            'prompt' => 'el usuario test@mailinator.com que permisos tiene y que rol',
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('response.intent', 'user_context')
+        ->assertJsonPath('response.cards.0.kind', 'user_context')
+        ->assertJsonPath('response.cards.0.data.user.email', $target->email)
+        ->assertJsonPath('response.meta.capability_key', 'users.detail');
+});
+
+it('reuses clarification hints to resolve the intended user on the next message', function () {
+    config()->set('ai-copilot.providers.default', 'gemini');
+    config()->set('ai-copilot.model', 'gemini-2.5-flash-lite');
+
+    $user = authorizedCopilotOperator();
+
+    User::factory()->create([
+        'name' => 'Test Operator',
+        'email' => 'operator@example.com',
+    ]);
+    $target = User::factory()->create([
+        'name' => 'Test Admin',
+        'email' => 'test@mailinator.com',
+    ]);
+
+    UsersGeminiCopilotAgent::fake(['Respuesta plana'])->preventStrayPrompts();
+
+    $conversationId = $this->actingAs($user)
+        ->postJson(route('system.users.copilot.messages'), [
+            'prompt' => 'Revisa al usuario Test',
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('response.intent', 'ambiguous')
+        ->json('conversation_id');
+
+    $this->actingAs($user)
+        ->postJson(route('system.users.copilot.messages'), [
+            'prompt' => 'el usuario es test admin',
+            'conversation_id' => $conversationId,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('response.intent', 'user_context')
+        ->assertJsonPath('response.cards.0.kind', 'user_context')
+        ->assertJsonPath('response.cards.0.data.user.email', $target->email)
+        ->assertJsonPath('response.meta.capability_key', 'users.detail');
 });
 
 it('can prepare a reset proposal for a user mentioned by name without explicit subject context', function () {
@@ -512,6 +814,173 @@ it('allows continuing an owned conversation while keeping transcript isolation',
     expect(DB::table('agent_conversation_messages')->where('conversation_id', $conversationId)->count())->toBe(4);
 });
 
+it('reconstructs count follow-ups from the previous native search snapshot', function () {
+    $user = authorizedCopilotOperator();
+
+    $marioOne = User::factory()->inactive()->create([
+        'name' => 'Mario Uno',
+        'email' => 'mario1@example.com',
+    ]);
+    $marioTwo = User::factory()->inactive()->create([
+        'name' => 'Mario Dos',
+        'email' => 'mario2@example.com',
+    ]);
+
+    UsersCopilotAgent::fake([
+        fakeCopilotResponse([
+            'answer' => 'Encontré usuarios inactivos.',
+            'intent' => 'search_results',
+            'cards' => [[
+                'kind' => 'search_results',
+                'title' => 'Usuarios inactivos',
+                'summary' => 'Hay 2 usuarios inactivos.',
+                'data' => [
+                    'count' => 2,
+                    'matching_count' => 2,
+                    'users' => [
+                        [
+                            'id' => $marioOne->id,
+                            'name' => $marioOne->name,
+                            'email' => $marioOne->email,
+                            'is_active' => false,
+                            'email_verified' => false,
+                            'two_factor_enabled' => false,
+                            'roles_count' => 0,
+                            'roles' => [],
+                            'created_at' => now()->toIso8601String(),
+                            'show_href' => '/system/users/'.$marioOne->id,
+                        ],
+                        [
+                            'id' => $marioTwo->id,
+                            'name' => $marioTwo->name,
+                            'email' => $marioTwo->email,
+                            'is_active' => false,
+                            'email_verified' => false,
+                            'two_factor_enabled' => false,
+                            'roles_count' => 0,
+                            'roles' => [],
+                            'created_at' => now()->toIso8601String(),
+                            'show_href' => '/system/users/'.$marioTwo->id,
+                        ],
+                    ],
+                ],
+            ]],
+        ]),
+        fakeCopilotResponse([
+            'answer' => 'No deberia usarse este texto del proveedor.',
+            'intent' => 'help',
+            'cards' => [],
+        ]),
+    ])->preventStrayPrompts();
+
+    $conversationId = $this->actingAs($user)
+        ->postJson(route('system.users.copilot.messages'), [
+            'prompt' => 'Busca usuarios inactivos.',
+        ])
+        ->assertSuccessful()
+        ->json('conversation_id');
+
+    $this->actingAs($user)
+        ->postJson(route('system.users.copilot.messages'), [
+            'prompt' => 'Y cuantos son',
+            'conversation_id' => $conversationId,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('response.intent', 'metrics')
+        ->assertJsonPath('response.answer', 'El subconjunto actual tiene 2 usuarios.')
+        ->assertJsonPath('response.cards.0.kind', 'metrics')
+        ->assertJsonPath('response.cards.0.data.capability_key', 'users.snapshot.result_count')
+        ->assertJsonPath('response.cards.0.data.metric.value', 2)
+        ->assertJsonPath('response.meta.diagnostics.source_of_truth', 'conversation_snapshot');
+});
+
+it('reconstructs count follow-ups from the previous gemini search snapshot', function () {
+    config()->set('ai-copilot.providers.default', 'gemini');
+
+    $user = authorizedCopilotOperator();
+
+    User::factory()->inactive()->create(['name' => 'Irene Uno', 'email' => 'irene1@example.com']);
+    User::factory()->inactive()->create(['name' => 'Irene Dos', 'email' => 'irene2@example.com']);
+
+    UsersGeminiCopilotAgent::fake([
+        'Respuesta plana',
+        'Respuesta plana',
+    ])->preventStrayPrompts();
+
+    $conversationId = $this->actingAs($user)
+        ->postJson(route('system.users.copilot.messages'), [
+            'prompt' => 'Busca usuarios inactivos.',
+        ])
+        ->assertSuccessful()
+        ->json('conversation_id');
+
+    $this->actingAs($user)
+        ->postJson(route('system.users.copilot.messages'), [
+            'prompt' => 'Y cuantos son',
+            'conversation_id' => $conversationId,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('response.intent', 'metrics')
+        ->assertJsonPath('response.answer', 'El subconjunto actual tiene 2 usuarios.')
+        ->assertJsonPath('response.cards.0.data.capability_key', 'users.snapshot.result_count')
+        ->assertJsonPath('response.meta.response_source', 'gemini_local_orchestrator')
+        ->assertJsonPath('response.meta.diagnostics.source_of_truth', 'conversation_snapshot');
+});
+
+it('returns an explicit clarification for ambiguous direct user references', function () {
+    $user = authorizedCopilotOperator();
+
+    User::factory()->create(['name' => 'Mario Vega', 'email' => 'mario1@example.com']);
+    User::factory()->create(['name' => 'Mario Soto', 'email' => 'mario2@example.com']);
+
+    UsersCopilotAgent::fake([
+        fakeCopilotResponse([
+            'answer' => 'Respuesta irrelevante del proveedor.',
+            'intent' => 'help',
+            'cards' => [],
+        ]),
+    ])->preventStrayPrompts();
+
+    $response = $this->actingAs($user)
+        ->postJson(route('system.users.copilot.messages'), [
+            'prompt' => 'Revisa al usuario Mario',
+        ]);
+
+    $response->assertSuccessful()
+        ->assertJsonPath('response.intent', 'ambiguous')
+        ->assertJsonPath('response.cards.0.kind', 'clarification')
+        ->assertJsonPath('response.meta.capability_key', 'users.clarification')
+        ->assertJsonPath('response.actions', []);
+
+    $snapshot = json_decode((string) DB::table('agent_conversations')->where('id', $response->json('conversation_id'))->value('snapshot'), true, flags: JSON_THROW_ON_ERROR);
+
+    expect(data_get($snapshot, 'pending_clarification.reason'))->toBe('ambiguous_target')
+        ->and(count(data_get($snapshot, 'pending_clarification.options', [])))->toBeGreaterThan(1);
+});
+
+it('fails safely when a follow-up count request has no prior context', function () {
+    $user = authorizedCopilotOperator();
+
+    UsersCopilotAgent::fake([
+        fakeCopilotResponse([
+            'answer' => 'Respuesta irrelevante del proveedor.',
+            'intent' => 'help',
+            'cards' => [],
+        ]),
+    ])->preventStrayPrompts();
+
+    $this->actingAs($user)
+        ->postJson(route('system.users.copilot.messages'), [
+            'prompt' => 'Y cuantos son',
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('response.intent', 'ambiguous')
+        ->assertJsonPath('response.cards.0.kind', 'clarification')
+        ->assertJsonPath('response.meta.capability_key', 'users.clarification')
+        ->assertJsonPath('response.meta.intent_family', 'ambiguous')
+        ->assertJsonPath('response.meta.response_source', 'native_tools');
+});
+
 it('keeps action proposals read only during message handling', function () {
     Notification::fake();
 
@@ -522,56 +991,6 @@ it('keeps action proposals read only during message handling', function () {
     ]);
 
     UsersCopilotAgent::fake([
-        fakeCopilotResponse([
-            'answer' => 'Puedo proponerte desactivar al usuario, pero aún no se ejecuta ningún cambio.',
-            'intent' => 'action_proposal',
-            'cards' => [],
-            'actions' => [
-                [
-                    'kind' => 'action_proposal',
-                    'action_type' => 'deactivate',
-                    'target' => [
-                        'kind' => 'user',
-                        'user_id' => $target->id,
-                        'name' => $target->name,
-                        'email' => $target->email,
-                        'is_active' => true,
-                    ],
-                    'summary' => 'Desactiva la cuenta de Mario Operador y cierra sus sesiones activas.',
-                    'payload' => [
-                        'reason' => 'copilot_confirmed_action',
-                    ],
-                    'can_execute' => false,
-                    'deny_reason' => 'Aún falta confirmación.',
-                    'required_permissions' => ['system.users.deactivate', 'system.users-copilot.execute'],
-                ],
-            ],
-        ]),
-        fakeCopilotResponse([
-            'answer' => 'Puedo proponer el restablecimiento, pero no se envía nada hasta confirmar.',
-            'intent' => 'action_proposal',
-            'cards' => [],
-            'actions' => [
-                [
-                    'kind' => 'action_proposal',
-                    'action_type' => 'send_reset',
-                    'target' => [
-                        'kind' => 'user',
-                        'user_id' => $target->id,
-                        'name' => $target->name,
-                        'email' => $target->email,
-                        'is_active' => true,
-                    ],
-                    'summary' => 'Envía un correo de restablecimiento de contraseña a Mario Operador.',
-                    'payload' => [
-                        'reason' => 'copilot_confirmed_action',
-                    ],
-                    'can_execute' => false,
-                    'deny_reason' => 'Aún falta confirmación.',
-                    'required_permissions' => ['system.users.send-reset', 'system.users-copilot.execute'],
-                ],
-            ],
-        ]),
         fakeCopilotResponse([
             'answer' => 'Preparé una propuesta de alta guiada, pero no crearé al usuario hasta confirmarlo.',
             'intent' => 'action_proposal',
@@ -739,6 +1158,126 @@ it('creates prompt derived titles for new conversations without a hidden extra p
         ->toBe('Consulta inicial para revisar permisos de usuarios')
         ->and((new UsersCopilotAgent(User::factory()->make()))->conversationTitleFor('Consulta inicial para revisar permisos de usuarios'))
         ->toBe('Consulta inicial para revisar permisos de usuarios');
+});
+
+it('searches users by name through the gemini orchestrator', function () {
+    config()->set('ai-copilot.providers.default', 'gemini');
+    config()->set('ai-copilot.model', 'gemini-2.5-flash-lite');
+
+    $user = authorizedCopilotOperator();
+
+    User::factory()->active()->create([
+        'name' => 'Daniel Bustos',
+        'email' => 'daniel@example.com',
+    ]);
+
+    UsersGeminiCopilotAgent::fake(['Respuesta plana'])->preventStrayPrompts();
+
+    $this->actingAs($user)
+        ->postJson(route('system.users.copilot.messages'), [
+            'prompt' => 'Busca usuarios con nombre Daniel',
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('response.intent', 'search_results')
+        ->assertJsonPath('response.meta.capability_key', 'users.search')
+        ->assertJsonPath('response.cards.0.kind', 'search_results')
+        ->assertJsonPath('response.cards.0.data.users.0.name', 'Daniel Bustos')
+        ->assertJsonPath('response.meta.fallback', false);
+});
+
+it('returns empty search results instead of help for non-existent users', function () {
+    config()->set('ai-copilot.providers.default', 'gemini');
+    config()->set('ai-copilot.model', 'gemini-2.5-flash-lite');
+
+    $user = authorizedCopilotOperator();
+
+    UsersGeminiCopilotAgent::fake(['Respuesta plana'])->preventStrayPrompts();
+
+    $response = $this->actingAs($user)
+        ->postJson(route('system.users.copilot.messages'), [
+            'prompt' => 'Busca usuario llamado SuperManInexistente',
+        ])
+        ->assertSuccessful();
+
+    expect($response->json('response.intent'))->toBe('search_results')
+        ->and($response->json('response.meta.capability_key'))->toBe('users.search')
+        ->and($response->json('response.cards.0.data.count'))->toBe(0)
+        ->and($response->json('response.answer'))->toContain('No se encontraron');
+});
+
+it('searches users by role through the gemini orchestrator', function () {
+    config()->set('ai-copilot.providers.default', 'gemini');
+    config()->set('ai-copilot.model', 'gemini-2.5-flash-lite');
+
+    $user = authorizedCopilotOperator();
+    $role = Role::factory()->active()->create(['display_name' => 'Auditor']);
+    $target = User::factory()->active()->create([
+        'name' => 'Ana Auditora',
+        'email' => 'ana-audit@example.com',
+    ]);
+    $target->assignRole($role);
+
+    UsersGeminiCopilotAgent::fake(['Respuesta plana'])->preventStrayPrompts();
+
+    $this->actingAs($user)
+        ->postJson(route('system.users.copilot.messages'), [
+            'prompt' => 'Busca usuarios con rol auditor',
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('response.intent', 'search_results')
+        ->assertJsonPath('response.meta.capability_key', 'users.search')
+        ->assertJsonPath('response.cards.0.data.users.0.name', 'Ana Auditora')
+        ->assertJsonPath('response.meta.fallback', false);
+});
+
+it('triggers deactivation proposal with direct imperative verb without magic words', function () {
+    config()->set('ai-copilot.providers.default', 'gemini');
+    config()->set('ai-copilot.model', 'gemini-2.5-flash-lite');
+
+    $user = authorizedCopilotOperator();
+    $target = User::factory()->active()->create([
+        'name' => 'Mario Operador',
+        'email' => 'mario-direct@example.com',
+    ]);
+
+    UsersGeminiCopilotAgent::fake(['Respuesta plana'])->preventStrayPrompts();
+
+    $this->actingAs($user)
+        ->postJson(route('system.users.copilot.messages'), [
+            'prompt' => 'Desactiva al usuario Mario Operador',
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('response.intent', 'action_proposal')
+        ->assertJsonPath('response.actions.0.action_type', 'deactivate')
+        ->assertJsonPath('response.actions.0.target.user_id', $target->id)
+        ->assertJsonPath('response.meta.fallback', false);
+
+    expect($target->fresh()->is_active)->toBeTrue();
+});
+
+it('triggers activation proposal with direct imperative verb', function () {
+    config()->set('ai-copilot.providers.default', 'gemini');
+    config()->set('ai-copilot.model', 'gemini-2.5-flash-lite');
+
+    $user = authorizedCopilotOperator();
+    $target = User::factory()->inactive()->create([
+        'name' => 'Inactivo Directo',
+        'email' => 'inactivo-directo@example.com',
+    ]);
+
+    UsersGeminiCopilotAgent::fake(['Respuesta plana'])->preventStrayPrompts();
+
+    $this->actingAs($user)
+        ->postJson(route('system.users.copilot.messages'), [
+            'prompt' => 'Activa al usuario Inactivo Directo',
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('response.intent', 'action_proposal')
+        ->assertJsonPath('response.actions.0.action_type', 'activate')
+        ->assertJsonPath('response.actions.0.target.user_id', $target->id)
+        ->assertJsonPath('response.meta.fallback', false);
+
+    expect($target->fresh()->is_active)->toBeFalse();
 });
 
 it('resolves the copilot provider and model from configuration', function () {

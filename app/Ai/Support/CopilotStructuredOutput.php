@@ -2,6 +2,7 @@
 
 namespace App\Ai\Support;
 
+use App\Ai\Tools\System\Users\SearchUsersTool;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\JsonSchema\Types\Type;
@@ -14,6 +15,14 @@ class CopilotStructuredOutput
     public const PROFILE_DEFAULT = 'default';
 
     public const PROFILE_GEMINI = 'gemini';
+
+    public const CARD_KINDS = ['notice', 'search_results', 'user_context', 'metrics', 'clarification'];
+
+    public const INTENTS = ['help', 'metrics', 'search_results', 'user_context', 'action_proposal', 'ambiguous', 'out_of_scope', 'error'];
+
+    public const LEGACY_INTENTS = ['inform'];
+
+    public const RESPONSE_SOURCES = ['native_tools', 'local_orchestrator', 'fallback'];
 
     /**
      * Get the structured schema shared by copilot agents.
@@ -29,49 +38,48 @@ class CopilotStructuredOutput
         return [
             'answer' => $schema->string()->required(),
             'intent' => $schema->string()->enum([
-                'help',
-                'inform',
-                'search_results',
-                'user_context',
-                'action_proposal',
-                'out_of_scope',
-                'error',
+                ...self::INTENTS,
+                ...self::LEGACY_INTENTS,
             ])->required(),
             'cards' => $schema->array()->items(
                 $schema->object([
-                    'kind' => $schema->string()->enum(['notice', 'search_results', 'user_context'])->required(),
-                    'title' => $schema->string()->nullable(),
-                    'summary' => $schema->string()->nullable(),
-                    'data' => $schema->object()->required(),
+                    'kind' => $schema->string()->enum(self::CARD_KINDS)->required(),
+                    'title' => $schema->string()->nullable()->required(),
+                    'summary' => $schema->string()->nullable()->required(),
+                    'data_json' => $schema->string()->required(),
                 ])->withoutAdditionalProperties()
-            )->default([]),
+            )->default([])->required(),
             'actions' => $schema->array()->items(
                 $schema->object([
                     'kind' => $schema->string()->enum(['action_proposal'])->required(),
                     'action_type' => $schema->string()->enum(array_column(CopilotActionType::cases(), 'value'))->required(),
-                    'target' => $schema->object()->required(),
+                    'target_json' => $schema->string()->required(),
                     'summary' => $schema->string()->required(),
-                    'payload' => $schema->object()->required(),
+                    'payload_json' => $schema->string()->required(),
                     'can_execute' => $schema->boolean()->required(),
-                    'deny_reason' => $schema->string()->nullable(),
+                    'deny_reason' => $schema->string()->nullable()->required(),
                     'required_permissions' => $schema->array()->items(
                         $schema->string()
-                    )->default([]),
+                    )->default([])->required(),
                 ])->withoutAdditionalProperties()
-            )->default([]),
+            )->default([])->required(),
             'requires_confirmation' => $schema->boolean()->required(),
             'references' => $schema->array()->items(
                 $schema->object([
                     'label' => $schema->string()->required(),
-                    'href' => $schema->string()->nullable(),
+                    'href' => $schema->string()->nullable()->required(),
                 ])->withoutAdditionalProperties()
-            )->default([]),
+            )->default([])->required(),
             'meta' => $schema->object([
                 'module' => $schema->string()->required(),
                 'channel' => $schema->string()->required(),
-                'subject_user_id' => $schema->integer()->nullable(),
+                'subject_user_id' => $schema->integer()->nullable()->required(),
                 'fallback' => $schema->boolean()->required(),
-                'diagnostics' => $schema->object()->nullable(),
+                'capability_key' => $schema->string()->nullable()->required(),
+                'intent_family' => $schema->string()->nullable()->required(),
+                'conversation_state_version' => $schema->integer()->nullable()->required(),
+                'response_source' => $schema->string()->enum(self::RESPONSE_SOURCES)->nullable()->required(),
+                'diagnostics_json' => $schema->string()->nullable()->required(),
             ])->withoutAdditionalProperties()->required(),
         ];
     }
@@ -90,10 +98,6 @@ class CopilotStructuredOutput
             }
         }
 
-        if ($profile !== self::PROFILE_GEMINI) {
-            return $payload;
-        }
-
         $cards = [];
 
         foreach (Arr::wrap($payload['cards']) as $card) {
@@ -107,11 +111,13 @@ class CopilotStructuredOutput
                 return null;
             }
 
+            $kind = $card['kind'] ?? null;
+
             $cards[] = [
-                'kind' => $card['kind'] ?? null,
+                'kind' => $kind,
                 'title' => $card['title'] ?? null,
                 'summary' => $card['summary'] ?? null,
-                'data' => $data,
+                'data' => self::normalizeCardData($kind, $data),
             ];
         }
 
@@ -156,9 +162,12 @@ class CopilotStructuredOutput
             return null;
         }
 
+        $intent = self::normalizeIntent($payload['intent'] ?? null, $cards);
+        $fallback = (bool) ($meta['fallback'] ?? false);
+
         return [
             'answer' => $payload['answer'],
-            'intent' => $payload['intent'],
+            'intent' => $intent,
             'cards' => $cards,
             'actions' => $actions,
             'requires_confirmation' => (bool) $payload['requires_confirmation'],
@@ -170,7 +179,19 @@ class CopilotStructuredOutput
                 'module' => $meta['module'] ?? 'users',
                 'channel' => $meta['channel'] ?? 'web',
                 'subject_user_id' => $meta['subject_user_id'] ?? null,
-                'fallback' => (bool) ($meta['fallback'] ?? false),
+                'fallback' => $fallback,
+                'capability_key' => is_string($meta['capability_key'] ?? null) ? $meta['capability_key'] : null,
+                'intent_family' => is_string($meta['intent_family'] ?? null)
+                    ? $meta['intent_family']
+                    : self::defaultIntentFamily($intent),
+                'conversation_state_version' => is_numeric($meta['conversation_state_version'] ?? null)
+                    ? (int) $meta['conversation_state_version']
+                    : null,
+                'response_source' => self::normalizeResponseSource(
+                    $meta['response_source'] ?? null,
+                    $fallback,
+                    $diagnostics,
+                ),
                 'diagnostics' => $diagnostics,
             ],
         ];
@@ -204,7 +225,133 @@ class CopilotStructuredOutput
             );
         }
 
-        return $normalized;
+        return self::repairSearchResultsPayload($normalized, $response);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @param  array<string, mixed>  $plan
+     * @param  array<string, mixed>|null  $executionResult
+     * @return array<string, mixed>
+     */
+    public static function reconstruct(
+        array $payload,
+        array $plan,
+        CopilotConversationSnapshot $snapshot,
+        ?array $executionResult = null,
+        string $responseSource = 'native_tools',
+        ?int $subjectUserId = null,
+    ): array {
+        $meta = is_array($payload['meta'] ?? null) ? $payload['meta'] : [];
+        $cards = array_values(array_filter(Arr::wrap($payload['cards'] ?? []), static fn (mixed $card): bool => is_array($card)));
+        $actions = array_values(array_filter(Arr::wrap($payload['actions'] ?? []), static fn (mixed $action): bool => is_array($action)));
+        $intentFamily = $plan['intent_family'] ?? ($meta['intent_family'] ?? null);
+        $capabilityKey = $plan['capability_key'] ?? ($meta['capability_key'] ?? null);
+
+        if ($intentFamily !== 'action_proposal') {
+            $actions = [];
+        }
+
+        if ($intentFamily === 'ambiguous' || self::hasClarificationCard($cards)) {
+            $clarification = self::firstClarificationCard($cards);
+            $question = Arr::get($clarification, 'data.question')
+                ?? Arr::get($clarification, 'summary')
+                ?? $payload['answer']
+                ?? 'Necesito una aclaracion para continuar.';
+
+            $cards = $clarification === null ? [] : [$clarification];
+            $actions = [];
+
+            return [
+                'answer' => is_string($question) ? $question : 'Necesito una aclaracion para continuar.',
+                'intent' => 'ambiguous',
+                'cards' => $cards,
+                'actions' => [],
+                'requires_confirmation' => false,
+                'references' => [],
+                'meta' => [
+                    ...$meta,
+                    'module' => 'users',
+                    'channel' => $meta['channel'] ?? 'web',
+                    'subject_user_id' => $subjectUserId,
+                    'fallback' => (bool) ($meta['fallback'] ?? false),
+                    'capability_key' => $capabilityKey ?? 'users.clarification',
+                    'intent_family' => 'ambiguous',
+                    'conversation_state_version' => $snapshot->version(),
+                    'response_source' => $responseSource,
+                    'diagnostics' => array_filter([
+                        ...(is_array($meta['diagnostics'] ?? null) ? $meta['diagnostics'] : []),
+                        'repair' => 'clarification_authoritative',
+                    ]),
+                ],
+            ];
+        }
+
+        if ($capabilityKey === 'users.snapshot.result_count') {
+            $count = $snapshot->lastResultCount();
+            $filters = $snapshot->lastFilters();
+
+            return [
+                'answer' => $count === 1
+                    ? 'El subconjunto actual tiene 1 usuario.'
+                    : 'El subconjunto actual tiene '.(int) $count.' usuarios.',
+                'intent' => 'metrics',
+                'cards' => [[
+                    'kind' => 'metrics',
+                    'title' => 'Conteo del subconjunto actual',
+                    'summary' => 'Este conteo reutiliza el ultimo resultado confirmado de la conversacion.',
+                    'data' => [
+                        'capability_key' => 'users.snapshot.result_count',
+                        'metric' => [
+                            'label' => 'Usuarios del subconjunto actual',
+                            'value' => $count,
+                            'unit' => 'users',
+                        ],
+                        'breakdown' => [],
+                        'applied_filters' => $filters === [] ? null : $filters,
+                    ],
+                ]],
+                'actions' => [],
+                'requires_confirmation' => false,
+                'references' => Arr::wrap($payload['references'] ?? []),
+                'meta' => [
+                    ...$meta,
+                    'module' => 'users',
+                    'channel' => $meta['channel'] ?? 'web',
+                    'subject_user_id' => $subjectUserId,
+                    'fallback' => false,
+                    'capability_key' => 'users.snapshot.result_count',
+                    'intent_family' => 'read_metrics',
+                    'conversation_state_version' => $snapshot->version(),
+                    'response_source' => $responseSource,
+                    'diagnostics' => array_filter([
+                        ...(is_array($meta['diagnostics'] ?? null) ? $meta['diagnostics'] : []),
+                        'source_of_truth' => 'conversation_snapshot',
+                    ]),
+                ],
+            ];
+        }
+
+        $canConfirm = count($actions) > 0
+            && collect($actions)->contains(static fn (array $action): bool => (bool) ($action['can_execute'] ?? false));
+
+        return [
+            ...$payload,
+            'actions' => $actions,
+            'requires_confirmation' => $intentFamily === 'action_proposal' ? $canConfirm : false,
+            'meta' => [
+                ...$meta,
+                'module' => 'users',
+                'channel' => $meta['channel'] ?? 'web',
+                'subject_user_id' => $subjectUserId,
+                'fallback' => (bool) ($meta['fallback'] ?? false),
+                'capability_key' => $capabilityKey,
+                'intent_family' => is_string($intentFamily) ? $intentFamily : self::defaultIntentFamily((string) ($payload['intent'] ?? 'help')),
+                'conversation_state_version' => $snapshot->version(),
+                'response_source' => $responseSource,
+                'diagnostics' => is_array($meta['diagnostics'] ?? null) ? $meta['diagnostics'] : null,
+            ],
+        ];
     }
 
     /**
@@ -272,6 +419,10 @@ class CopilotStructuredOutput
                 'channel' => 'web',
                 'subject_user_id' => $subjectUserId,
                 'fallback' => true,
+                'capability_key' => null,
+                'intent_family' => null,
+                'conversation_state_version' => null,
+                'response_source' => 'fallback',
                 'diagnostics' => empty($diagnostics) ? null : $diagnostics,
             ],
         ];
@@ -285,17 +436,12 @@ class CopilotStructuredOutput
         return [
             'answer' => $schema->string()->required(),
             'intent' => $schema->string()->enum([
-                'help',
-                'inform',
-                'search_results',
-                'user_context',
-                'action_proposal',
-                'out_of_scope',
-                'error',
+                ...self::INTENTS,
+                ...self::LEGACY_INTENTS,
             ])->required(),
             'cards' => $schema->array()->items(
                 $schema->object([
-                    'kind' => $schema->string()->enum(['notice', 'search_results', 'user_context'])->required(),
+                    'kind' => $schema->string()->enum(self::CARD_KINDS)->required(),
                     'title' => $schema->string()->nullable(),
                     'summary' => $schema->string()->nullable(),
                     'data_json' => $schema->string()->required(),
@@ -327,6 +473,10 @@ class CopilotStructuredOutput
                 'channel' => $schema->string()->required(),
                 'subject_user_id' => $schema->integer()->nullable(),
                 'fallback' => $schema->boolean()->required(),
+                'capability_key' => $schema->string()->nullable(),
+                'intent_family' => $schema->string()->nullable(),
+                'conversation_state_version' => $schema->integer()->nullable(),
+                'response_source' => $schema->string()->enum(self::RESPONSE_SOURCES)->nullable(),
                 'diagnostics_json' => $schema->string()->nullable(),
             ])->withoutAdditionalProperties()->required(),
         ];
@@ -352,5 +502,293 @@ class CopilotStructuredOutput
         }
 
         return is_array($decoded) ? $decoded : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    protected static function normalizeCardData(mixed $kind, array $data): array
+    {
+        if ($kind === 'metrics') {
+            $metric = is_array($data['metric'] ?? null) ? $data['metric'] : [];
+
+            return [
+                'capability_key' => is_string($data['capability_key'] ?? null) ? $data['capability_key'] : null,
+                'metric' => [
+                    'label' => is_string($metric['label'] ?? null) ? $metric['label'] : null,
+                    'value' => is_numeric($metric['value'] ?? null) ? (int) $metric['value'] : null,
+                    'unit' => in_array($metric['unit'] ?? null, ['users', 'roles'], true) ? $metric['unit'] : 'users',
+                ],
+                'breakdown' => array_values(array_map(
+                    static fn (array $item): array => [
+                        'key' => is_string($item['key'] ?? null) ? $item['key'] : '',
+                        'label' => is_string($item['label'] ?? null) ? $item['label'] : '',
+                        'value' => is_numeric($item['value'] ?? null) ? (int) $item['value'] : 0,
+                    ],
+                    array_filter(
+                        Arr::wrap($data['breakdown'] ?? []),
+                        static fn (mixed $item): bool => is_array($item),
+                    ),
+                )),
+                'applied_filters' => is_array($data['applied_filters'] ?? null)
+                    ? $data['applied_filters']
+                    : null,
+            ];
+        }
+
+        if ($kind === 'clarification') {
+            return [
+                'reason' => is_string($data['reason'] ?? null) ? $data['reason'] : 'missing_context',
+                'question' => is_string($data['question'] ?? null) ? $data['question'] : '',
+                'options' => array_values(array_map(
+                    static fn (array $option): array => [
+                        'label' => is_string($option['label'] ?? null) ? $option['label'] : '',
+                        'value' => is_string($option['value'] ?? null) ? $option['value'] : '',
+                    ],
+                    array_filter(
+                        Arr::wrap($data['options'] ?? []),
+                        static fn (mixed $option): bool => is_array($option),
+                    ),
+                )),
+            ];
+        }
+
+        if ($kind !== 'search_results') {
+            return $data;
+        }
+
+        $users = array_values(array_filter(
+            Arr::wrap($data['users'] ?? []),
+            static fn (mixed $user): bool => is_array($user),
+        ));
+
+        $visibleCount = $data['visible_count'] ?? $data['count'] ?? count($users);
+        $visibleCount = is_numeric($visibleCount) ? (int) $visibleCount : count($users);
+
+        $matchingCount = $data['matching_count'] ?? $data['count'] ?? $visibleCount;
+        $matchingCount = is_numeric($matchingCount) ? (int) $matchingCount : $visibleCount;
+
+        if ($users === []) {
+            $visibleCount = 0;
+            $matchingCount = 0;
+        }
+
+        return [
+            ...$data,
+            'count' => max($visibleCount, 0),
+            'visible_count' => max($visibleCount, 0),
+            'matching_count' => max($matchingCount, 0),
+            'truncated' => is_bool($data['truncated'] ?? null) ? $data['truncated'] : $matchingCount > $visibleCount,
+            'limit' => is_numeric($data['limit'] ?? null) ? (int) $data['limit'] : 8,
+            'count_represents' => is_string($data['count_represents'] ?? null) ? $data['count_represents'] : 'visible_results',
+            'list_semantics' => is_string($data['list_semantics'] ?? null) ? $data['list_semantics'] : 'search_results_only',
+            'aggregate_safe' => is_bool($data['aggregate_safe'] ?? null) ? $data['aggregate_safe'] : false,
+            'users' => $users,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    protected static function repairSearchResultsPayload(array $payload, AgentResponse $response): array
+    {
+        $searchResults = self::latestSearchUsersToolResult($response);
+
+        if ($searchResults === null) {
+            return $payload;
+        }
+
+        $cards = [];
+        $hasSearchResultsCard = false;
+
+        foreach (Arr::wrap($payload['cards'] ?? []) as $card) {
+            if (! is_array($card)) {
+                continue;
+            }
+
+            if (($card['kind'] ?? null) !== 'search_results') {
+                $cards[] = $card;
+
+                continue;
+            }
+
+            $hasSearchResultsCard = true;
+
+            $cards[] = [
+                ...$card,
+                'data' => self::normalizeCardData('search_results', $searchResults),
+                'summary' => $card['summary'] ?? self::defaultSearchResultsSummary($searchResults),
+            ];
+        }
+
+        if (($payload['intent'] ?? null) === 'search_results' && ! $hasSearchResultsCard) {
+            $cards[] = [
+                'kind' => 'search_results',
+                'title' => 'Resultados de usuarios',
+                'summary' => self::defaultSearchResultsSummary($searchResults),
+                'data' => self::normalizeCardData('search_results', $searchResults),
+            ];
+        }
+
+        return [
+            ...$payload,
+            'cards' => $cards,
+            'meta' => [
+                ...$payload['meta'],
+                'diagnostics' => array_filter([
+                    ...(is_array($payload['meta']['diagnostics'] ?? null) ? $payload['meta']['diagnostics'] : []),
+                    'search_results_source' => 'tool_results',
+                ]),
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    protected static function latestSearchUsersToolResult(AgentResponse $response): ?array
+    {
+        $result = null;
+
+        foreach ($response->toolResults as $toolResult) {
+            $name = is_object($toolResult) ? ($toolResult->name ?? null) : ($toolResult['name'] ?? null);
+
+            if ($name !== class_basename(SearchUsersTool::class)) {
+                continue;
+            }
+
+            $decoded = self::decodeSearchUsersToolResult(
+                is_object($toolResult) ? ($toolResult->result ?? null) : ($toolResult['result'] ?? null),
+            );
+
+            if ($decoded !== null) {
+                $result = $decoded;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    protected static function decodeSearchUsersToolResult(mixed $result): ?array
+    {
+        if (is_array($result)) {
+            return self::normalizeCardData('search_results', $result);
+        }
+
+        $decoded = self::decodeJsonObject($result);
+
+        return is_array($decoded)
+            ? self::normalizeCardData('search_results', $decoded)
+            : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $searchResults
+     */
+    protected static function defaultSearchResultsSummary(array $searchResults): string
+    {
+        $count = (int) ($searchResults['count'] ?? 0);
+
+        return $count === 1
+            ? 'Se encontro 1 usuario.'
+            : "Se encontraron {$count} usuarios.";
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $cards
+     */
+    protected static function normalizeIntent(mixed $intent, array $cards): string
+    {
+        if (! is_string($intent) || $intent === '') {
+            return 'error';
+        }
+
+        if ($intent !== 'inform') {
+            return in_array($intent, self::INTENTS, true) ? $intent : 'error';
+        }
+
+        foreach ($cards as $card) {
+            $kind = $card['kind'] ?? null;
+
+            if ($kind === 'user_context') {
+                return 'user_context';
+            }
+
+            if ($kind === 'search_results') {
+                return 'search_results';
+            }
+
+            if ($kind === 'metrics') {
+                return 'metrics';
+            }
+
+            if ($kind === 'clarification') {
+                return 'ambiguous';
+            }
+        }
+
+        return 'help';
+    }
+
+    protected static function defaultIntentFamily(string $intent): ?string
+    {
+        return match ($intent) {
+            'metrics' => 'read_metrics',
+            'search_results' => 'read_search',
+            'user_context' => 'read_detail',
+            'action_proposal' => 'action_proposal',
+            'ambiguous' => 'ambiguous',
+            'help' => 'help',
+            'out_of_scope' => 'out_of_scope',
+            default => null,
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $diagnostics
+     */
+    protected static function normalizeResponseSource(mixed $source, bool $fallback, ?array $diagnostics): string
+    {
+        if (is_string($source) && in_array($source, self::RESPONSE_SOURCES, true)) {
+            return $source;
+        }
+
+        if ($fallback) {
+            return 'fallback';
+        }
+
+        if (($diagnostics['execution'] ?? null) === 'local_capability_orchestrator') {
+            return 'local_orchestrator';
+        }
+
+        return 'native_tools';
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $cards
+     */
+    protected static function hasClarificationCard(array $cards): bool
+    {
+        return self::firstClarificationCard($cards) !== null;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $cards
+     * @return array<string, mixed>|null
+     */
+    protected static function firstClarificationCard(array $cards): ?array
+    {
+        foreach ($cards as $card) {
+            if (($card['kind'] ?? null) === 'clarification') {
+                return $card;
+            }
+        }
+
+        return null;
     }
 }
