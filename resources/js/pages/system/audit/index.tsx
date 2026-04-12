@@ -7,6 +7,7 @@ import {
     show,
 } from '@/actions/App/Http/Controllers/System/AuditController';
 import AuditExportController from '@/actions/App/Http/Controllers/System/AuditExportController';
+import { HelpLink } from '@/components/help/help-link';
 import { AuditSourceBadge } from '@/components/system/audit-source-badge';
 import { PageHeader } from '@/components/system/page-header';
 import { Card } from '@/components/ui/card';
@@ -382,6 +383,9 @@ export default function AuditIndex({
                     icon={ScrollText}
                     title="Auditoría"
                     description="Consulta cambios de modelos y eventos de seguridad del sistema."
+                    actions={
+                        <HelpLink category="audit" slug="review-audit-events" />
+                    }
                 />
 
                 <Card className="gap-0 py-0">

@@ -282,6 +282,7 @@ function cleanupScaffoldArtifacts(): void
             base_path('resources/js/pages/'.$token),
             base_path('resources/js/actions/App/Http/Controllers/'.Str::studly($token)),
             base_path('tests/Feature/'.Str::studly($token)),
+            resource_path('help/'.$token),
         ] as $directory) {
             if ($filesystem->isDirectory($directory)) {
                 $filesystem->deleteDirectory($directory);
@@ -317,6 +318,12 @@ function cleanupScaffoldArtifacts(): void
         }
 
         foreach (glob(base_path('resources/js/routes/'.$token.'*')) ?: [] as $path) {
+            if ($filesystem->isDirectory($path)) {
+                $filesystem->deleteDirectory($path);
+
+                continue;
+            }
+
             $filesystem->delete($path);
         }
 

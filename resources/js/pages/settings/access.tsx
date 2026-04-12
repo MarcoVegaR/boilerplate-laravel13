@@ -2,6 +2,8 @@ import { Head } from '@inertiajs/react';
 import { Key, Shield } from 'lucide-react';
 
 import AccessController from '@/actions/App/Http/Controllers/Settings/AccessController';
+import { HelpLink } from '@/components/help/help-link';
+import { PageHeader } from '@/components/system/page-header';
 import { StatCard } from '@/components/system/stat-card';
 import { StatusBadge } from '@/components/system/status-badge';
 import { Badge } from '@/components/ui/badge';
@@ -38,6 +40,18 @@ export default function AccessSettings({ roles, effectivePermissions }: Props) {
             <h1 className="sr-only">Acceso</h1>
 
             <SettingsLayout>
+                <PageHeader
+                    icon={Shield}
+                    title="Acceso"
+                    description="Revisa tus roles activos y los permisos efectivos que heredas dentro del sistema."
+                    actions={
+                        <HelpLink
+                            category="security-access"
+                            slug="review-my-access"
+                        />
+                    }
+                />
+
                 {/* Stats */}
                 <div className="grid grid-cols-2 gap-4">
                     <StatCard

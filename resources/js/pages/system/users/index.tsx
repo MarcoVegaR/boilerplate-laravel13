@@ -31,6 +31,7 @@ import ExportUsersController from '@/actions/App/Http/Controllers/System/Users/E
 import SendPasswordResetController from '@/actions/App/Http/Controllers/System/Users/SendPasswordResetController';
 import { BulkActionBar } from '@/components/system/bulk-action-bar';
 import { CopilotSheet } from '@/components/system/copilot/copilot-sheet';
+import { HelpLink } from '@/components/help/help-link';
 import { PageHeader } from '@/components/system/page-header';
 import { StatusBadge } from '@/components/system/status-badge';
 import { UserAvatar } from '@/components/system/user-avatar';
@@ -273,6 +274,7 @@ export default function UsersIndex({ users, roles, filters }: Props) {
                     description="Gestiona las cuentas de usuario, sus roles y permisos de acceso."
                     actions={
                         <>
+                            <HelpLink category="users" slug="manage-users" />
                             {canExport && (
                                 <>
                                     <Button

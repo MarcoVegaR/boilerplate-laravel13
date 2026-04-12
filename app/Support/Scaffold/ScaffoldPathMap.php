@@ -31,6 +31,7 @@ final class ScaffoldPathMap
             'create_page' => "resources/js/pages/{$pagePath}/create.tsx",
             'edit_page' => "resources/js/pages/{$pagePath}/edit.tsx",
             'form_component' => "resources/js/pages/{$pagePath}/components/".Str::kebab($context->model).'-form.tsx',
+            'help_article' => "resources/help/{$modulePath}/{$context->resource}.md",
             'types' => "resources/js/types/{$context->typeFileName()}",
             'index_test' => "tests/Feature/{$context->moduleStudly}/{$context->model}IndexTest.php",
             'create_test' => "tests/Feature/{$context->moduleStudly}/{$context->model}CreateTest.php",

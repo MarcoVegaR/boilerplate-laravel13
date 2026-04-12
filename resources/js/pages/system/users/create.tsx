@@ -7,6 +7,7 @@ import {
     index,
     store,
 } from '@/actions/App/Http/Controllers/System/UserController';
+import { HelpLink } from '@/components/help/help-link';
 import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
 import { PageHeader } from '@/components/system/page-header';
@@ -49,6 +50,9 @@ export default function UserCreate({ roles }: Props) {
                         icon={UserPlus}
                         title="Crear usuario"
                         description="Crea una nueva cuenta de usuario y asigna los roles correspondientes."
+                        actions={
+                            <HelpLink category="users" slug="create-user" />
+                        }
                     />
                     <Form {...store.form()} className="space-y-6">
                         {({ errors, processing }) => (

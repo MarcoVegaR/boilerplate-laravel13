@@ -85,6 +85,10 @@ export function AppHeader({ breadcrumbs = [] }: Props) {
                                                     key={item.title}
                                                     href={item.href}
                                                     className="flex items-center space-x-2 font-medium"
+                                                    data-test={
+                                                        item.dataTest ??
+                                                        undefined
+                                                    }
                                                 >
                                                     {item.icon && (
                                                         <item.icon className="h-5 w-5" />
@@ -135,6 +139,9 @@ export function AppHeader({ breadcrumbs = [] }: Props) {
                                                 ),
                                                 'h-9 cursor-pointer px-3',
                                             )}
+                                            data-test={
+                                                item.dataTest ?? undefined
+                                            }
                                         >
                                             {item.icon && (
                                                 <item.icon className="mr-2 h-4 w-4" />

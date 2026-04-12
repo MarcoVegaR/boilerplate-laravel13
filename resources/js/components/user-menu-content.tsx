@@ -1,5 +1,7 @@
 import { Link, router } from '@inertiajs/react';
-import { LogOut, Settings } from 'lucide-react';
+import { CircleHelp, LogOut, Settings } from 'lucide-react';
+
+import { index as helpIndex } from '@/actions/App/Http/Controllers/HelpController';
 import {
     DropdownMenuGroup,
     DropdownMenuItem,
@@ -9,7 +11,7 @@ import {
 import { UserInfo } from '@/components/user-info';
 import { useMobileNavigation } from '@/hooks/use-mobile-navigation';
 import { logout } from '@/routes';
-import { edit } from '@/routes/profile/index';
+import { edit } from '@/routes/profile';
 import type { User } from '@/types';
 
 type Props = {
@@ -33,6 +35,18 @@ export function UserMenuContent({ user }: Props) {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
+                <DropdownMenuItem asChild>
+                    <Link
+                        className="block w-full cursor-pointer"
+                        href={helpIndex.url()}
+                        prefetch
+                        onClick={cleanup}
+                        data-test="user-menu-help-link"
+                    >
+                        <CircleHelp className="mr-2" />
+                        Ayuda
+                    </Link>
+                </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                     <Link
                         className="block w-full cursor-pointer"

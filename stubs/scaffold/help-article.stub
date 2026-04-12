@@ -1,0 +1,31 @@
+---
+title: Gestionar {{ resourcesHeadline }}
+summary: Flujo inicial para consultar y operar {{ resourcesHeadline }} dentro del módulo {{ moduleHeadline }}.
+category: {{ moduleHeadline }}
+order: 10
+---
+
+<!-- Convención: el directorio físico de este artículo usa el nombre del resource en kebab-case (ej. "inventory-items/").
+     Ese mismo valor es el `category` que debes pasar al componente HelpLink en las páginas del módulo:
+     <HelpLink category="{{ module }}/{{ resource }}" slug="{{ resource }}" />
+     El campo `category` del frontmatter es el label legible para el operador (ej. "Inventario").
+     Ambos valores son distintos por diseño: uno es la clave técnica de ruta, el otro es el texto visible. -->
+
+Describe aquí el propósito operativo de **{{ resourcesHeadline }}** y cuándo conviene consultar este artículo.
+
+## Checklist rápido
+
+- Ubica la vista principal de {{ resourcesHeadline }} en el shell autenticado.
+- Revisa los permisos necesarios antes de ejecutar cambios.
+- Documenta aquí validaciones, filtros o decisiones clave del flujo.
+
+## Pasos sugeridos
+
+1. Entra al módulo **{{ moduleHeadline }}**.
+2. Abre la sección **{{ resourcesHeadline }}**.
+3. Completa el flujo principal y actualiza esta guía con las reglas reales del negocio.
+
+## Notas operativas
+
+- Sustituye este contenido por instrucciones específicas del equipo.
+- Añade enlaces a artículos relacionados cuando el módulo crezca.

@@ -22,6 +22,7 @@ final class ScaffoldStubRenderer
             new GeneratedFile($paths['permissions_seeder'], $this->renderStub('permissions-seeder.stub', $context)),
             new GeneratedFile($paths['index_page'], $this->renderStub('index-page.stub', $context)),
             new GeneratedFile($paths['show_page'], $this->renderStub('show-page.stub', $context)),
+            new GeneratedFile($paths['help_article'], $this->renderStub('help-article.stub', $context)),
             new GeneratedFile($paths['types'], $this->renderStub('types.stub', $context)),
             new GeneratedFile($paths['index_test'], $this->renderStub('index-test.stub', $context)),
             new GeneratedFile($paths['delete_test'], $this->renderStub('delete-test.stub', $context)),
@@ -65,6 +66,7 @@ final class ScaffoldStubRenderer
         return [
             '{{ module }}' => $context->module,
             '{{ moduleStudly }}' => $context->moduleStudly,
+            '{{ moduleHeadline }}' => Str::headline($context->module),
             '{{ modulePath }}' => $context->modulePath,
             '{{ model }}' => $context->model,
             '{{ modelVariable }}' => $context->modelVariable,

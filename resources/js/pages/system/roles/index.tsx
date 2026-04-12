@@ -24,6 +24,7 @@ import {
     show,
 } from '@/actions/App/Http/Controllers/System/RoleController';
 import RoleDeactivateController from '@/actions/App/Http/Controllers/System/RoleDeactivateController';
+import { HelpLink } from '@/components/help/help-link';
 import { PageHeader } from '@/components/system/page-header';
 import { StatusBadge } from '@/components/system/status-badge';
 import { Badge } from '@/components/ui/badge';
@@ -183,14 +184,20 @@ export default function RolesIndex({ roles, filters }: Props) {
                     title="Roles"
                     description="Define los roles del sistema y configura sus permisos de acceso."
                     actions={
-                        canCreate ? (
-                            <Button asChild size="sm">
-                                <Link href={create.url()}>
-                                    <PlusCircle className="size-4" />
-                                    Crear rol
-                                </Link>
-                            </Button>
-                        ) : undefined
+                        <>
+                            <HelpLink
+                                category="roles-and-permissions"
+                                slug="manage-roles"
+                            />
+                            {canCreate ? (
+                                <Button asChild size="sm">
+                                    <Link href={create.url()}>
+                                        <PlusCircle className="size-4" />
+                                        Crear rol
+                                    </Link>
+                                </Button>
+                            ) : null}
+                        </>
                     }
                 />
 

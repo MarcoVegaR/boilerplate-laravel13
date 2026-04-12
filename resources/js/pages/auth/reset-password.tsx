@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import AuthLayout from '@/layouts/auth-layout';
 import { resetPasswordContent } from '@/pages/auth/content';
-import { update } from '@/routes/password/index';
+import { update } from '@/routes/password';
 
 type Props = {
     token: string;

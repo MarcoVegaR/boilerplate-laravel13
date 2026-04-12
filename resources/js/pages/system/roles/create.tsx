@@ -7,6 +7,7 @@ import {
     index,
     store,
 } from '@/actions/App/Http/Controllers/System/RoleController';
+import { HelpLink } from '@/components/help/help-link';
 import InputError from '@/components/input-error';
 import { PageHeader } from '@/components/system/page-header';
 import { PermissionPicker } from '@/components/system/permission-picker';
@@ -46,6 +47,12 @@ export default function RoleCreate({ groupedPermissions }: Props) {
                         icon={ShieldPlus}
                         title="Crear rol"
                         description="Define un nuevo rol y asigna los permisos correspondientes."
+                        actions={
+                            <HelpLink
+                                category="roles-and-permissions"
+                                slug="create-role"
+                            />
+                        }
                     />
                     <Form {...store.form()} className="space-y-6">
                         {({ errors, processing }) => (

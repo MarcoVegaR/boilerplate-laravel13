@@ -47,6 +47,7 @@ export type SharedUiLink = {
     title: string;
     href: NonNullable<InertiaLinkProps['href']>;
     icon?: string | null;
+    dataTest?: string | null;
 };
 
 export type SharedUiProps = {

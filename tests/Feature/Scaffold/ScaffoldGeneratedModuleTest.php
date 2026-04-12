@@ -44,6 +44,8 @@ it('verifies a writable scaffold after the documented manual integration steps',
     $typesFile = file_get_contents(base_path('resources/js/types/'.$module.'-'.$resource.'.ts'));
     $indexPage = file_get_contents(base_path('resources/js/pages/'.$module.'/'.$resource.'/index.tsx'));
     $actionFile = base_path('resources/js/actions/App/Http/Controllers/'.Str::studly($module).'/'.$model.'Controller.ts');
+    $helpArticlePath = base_path('resources/help/'.$module.'/'.$resource.'.md');
+    $helpArticle = file_get_contents($helpArticlePath);
 
     expect($controller)->toContain("Gate::authorize('viewAny', {$model}::class)")
         ->and($controller)->toContain("return Inertia::render('{$module}/{$resource}/index'")
@@ -52,6 +54,10 @@ it('verifies a writable scaffold after the documented manual integration steps',
         ->and($indexPage)->toContain("import { create, destroy, edit, index, show } from '@/actions/App/Http/Controllers/".Str::studly($module)."/{$model}Controller';")
         ->and($indexPage)->toContain('<PageHeader')
         ->and($indexPage)->toContain('handleSort')
+        ->and(file_exists($helpArticlePath))->toBeTrue()
+        ->and($helpArticle)->toContain('title: Gestionar')
+        ->and($helpArticle)->toContain('category: '.Str::headline($module))
+        ->and($helpArticle)->toContain('## Checklist rápido')
         ->and(file_exists($actionFile))->toBeTrue()
         ->and(Route::has($module.'.'.$resource.'.index'))->toBeTrue()
         ->and(Route::has($module.'.'.$resource.'.store'))->toBeTrue()
@@ -166,6 +172,7 @@ function cleanupGeneratedScaffoldArtifacts(): void
         foreach ([
             base_path('app/Http/Controllers/'.Str::studly($token)),
             base_path('app/Http/Requests/'.Str::studly($token)),
+            base_path('resources/help/'.$token),
             base_path('resources/js/pages/'.$token),
             base_path('resources/js/actions/App/Http/Controllers/'.Str::studly($token)),
             base_path('tests/Feature/'.Str::studly($token)),
@@ -204,6 +211,12 @@ function cleanupGeneratedScaffoldArtifacts(): void
         }
 
         foreach (glob(base_path('resources/js/routes/'.$token.'*')) ?: [] as $path) {
+            if ($filesystem->isDirectory($path)) {
+                $filesystem->deleteDirectory($path);
+
+                continue;
+            }
+
             $filesystem->delete($path);
         }
 

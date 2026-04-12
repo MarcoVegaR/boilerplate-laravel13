@@ -28,6 +28,9 @@ test('dashboard uses spanish corporate copy and shared layout metadata', functio
             ->where('ui.branding.company', 'Caracoders Pro Services')
             ->where('ui.navigation.label', 'Navegación')
             ->where('ui.navigation.items.0.title', 'Panel')
+            ->where('ui.navigation.items', fn ($items) => collect($items)->doesntContain(
+                fn (array $item) => $item['title'] === 'Ayuda'
+            ))
             ->where('ui.navigation.starterPromoLinksRemoved', true)
             ->missing('dashboardContent'),
         );
