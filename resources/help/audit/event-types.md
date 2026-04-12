@@ -1,48 +1,52 @@
 ---
 title: Tipos de eventos y fuentes de auditoría
-summary: Referencia de los tipos de eventos que registra el sistema y cómo diferenciar eventos de modelos de eventos de seguridad.
+summary: Referencia para entender los diferentes tipos de eventos que registra el sistema y cómo diferenciarlos.
 category: Auditoría
 order: 20
 ---
 
-La auditoría del sistema agrupa dos tipos de eventos en una vista unificada: cambios en datos de modelos y eventos de seguridad.
+El sistema registra automáticamente dos tipos de actividad: **cambios en datos** y **eventos de seguridad**. Ambos aparecen en la misma vista de auditoría, pero puedes filtrarlos por separado.
 
-## Fuentes disponibles
+## 📂 ¿Qué fuentes de eventos existen?
 
-| Fuente | Qué registra |
+| Fuente | ¿Qué registra? | Ejemplo |
+| --- | --- | --- |
+| **Modelos** 📝 | Cambios en los datos del sistema | Se creó un usuario, se editó un rol |
+| **Seguridad** 🔐 | Actividad relacionada con el acceso | Alguien inició sesión, se cambió una contraseña |
+
+## 📝 Eventos de cambios en datos (Modelos)
+
+| Evento | ¿Cuándo ocurre? |
 | --- | --- |
-| **Modelos** | Creaciones, actualizaciones y eliminaciones de registros |
-| **Seguridad** | Intentos de sesión, cierres, cambios de contraseña y acciones de 2FA |
+| **Creación** | Se creó un registro nuevo (un usuario, un rol, etc.) |
+| **Actualización** | Se modificaron datos de un registro existente |
+| **Eliminación** | Se borró un registro |
 
-## Eventos de modelos más comunes
+## 🔐 Eventos de seguridad
 
-| Evento | Cuándo ocurre |
+| Evento | ¿Cuándo ocurre? |
 | --- | --- |
-| `created` | Se creó un registro nuevo |
-| `updated` | Se modificaron campos de un registro |
-| `deleted` | Se eliminó un registro |
+| **Inicio de sesión** ✅ | Alguien entró al sistema correctamente |
+| **Intento fallido** ❌ | Se intentó entrar con datos incorrectos o la cuenta estaba bloqueada |
+| **Cierre de sesión** | Alguien salió del sistema |
+| **2FA configurado** | Se activó la verificación en dos pasos |
+| **Contraseña cambiada** | Se actualizó la contraseña de una cuenta |
 
-## Eventos de seguridad más comunes
+## 🕵️ ¿Cuándo usar cada fuente?
 
-| Evento | Cuándo ocurre |
-| --- | --- |
-| Inicio de sesión | El usuario autenticó correctamente |
-| Intento fallido | Credenciales incorrectas o cuenta inactiva |
-| Cierre de sesión | El usuario cerró la sesión manualmente |
-| 2FA configurado | Se activó el segundo factor |
-| Contraseña cambiada | Se actualizó la contraseña de la cuenta |
+- **Modelos** → Cuando necesitas saber **quién cambió un dato** y qué valores tenía antes y después.
+- **Seguridad** → Cuando necesitas rastrear **intentos de acceso**, horarios de sesión o cambios de contraseña.
+- **Todas** → Cuando investigas una situación que involucra **datos y acceso** al mismo tiempo.
 
-## Cómo usar las fuentes para investigar
+## 📋 ¿Qué información muestra el detalle de un evento?
 
-- Usa **Modelos** cuando necesitas saber quién cambió un dato y qué valores tenía antes.
-- Usa **Seguridad** cuando necesitas rastrear intentos de acceso, horarios de sesión o cambios de credenciales.
-- Usa **Todas** para ver el contexto completo de una situación que involucra datos y acceso al mismo tiempo.
+Al hacer clic en cualquier evento, verás:
 
-## Campos del detalle
+- **Actor** — Quién realizó la acción.
+- **Entidad** — Sobre qué registro se actuó (el usuario, el rol, etc.).
+- **Valores anteriores y nuevos** — Solo para cambios en datos; muestra qué había antes y qué quedó después.
+- **Información técnica** — Para eventos de seguridad: dirección IP, navegador, etc. (cuando el sistema los registre).
 
-Al abrir un evento, el detalle muestra:
+## 📖 Artículos relacionados
 
-- **Actor**: quién ejecutó la acción.
-- **Entidad**: sobre qué registro se actuó.
-- **Valores anteriores y nuevos**: para eventos de modelo.
-- **Metadatos adicionales**: para eventos de seguridad (IP, agente, etc.).
+- [Consultar eventos de auditoría](/help/audit/review-audit-events) — Cómo buscar y filtrar eventos paso a paso.

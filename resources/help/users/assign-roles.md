@@ -1,36 +1,44 @@
 ---
 title: Asignar roles a un usuario
-summary: Guía para vincular roles activos a una cuenta y validar los permisos efectivos resultantes.
+summary: Cómo agregar o cambiar los roles de una persona para controlar a qué puede acceder en el sistema.
 category: Usuarios
 order: 40
 ---
 
-Los roles determinan qué puede hacer una persona en el sistema. Asignarlos correctamente es la forma más directa de controlar el acceso.
+Los **roles** son como etiquetas que le dicen al sistema qué puede hacer cada persona. Por ejemplo, un rol de "Editor" podría dar permiso para modificar datos, mientras que uno de "Consultor" solo permite ver información.
 
-## Antes de asignar
+## 📋 Antes de asignar un rol
 
-- Revisa en el listado de roles cuáles están activos y cuáles cubren el caso.
-- Confirma que el rol tiene los permisos mínimos necesarios para la tarea esperada.
-- Evita asignar roles genéricos amplios cuando existe uno más específico.
+- Revisa qué roles existen en el [listado de roles](/help/roles-and-permissions/manage-roles) y cuáles están activos.
+- Confirma que el rol incluye los permisos que la persona necesita.
+- Si existe un rol específico para el caso, **prefiere ese** antes que uno genérico con muchos permisos.
 
-## Pasos
+## 🚀 Paso a paso
 
-1. Abre la cuenta de usuario desde el listado o la búsqueda.
-2. Entra a la opción de edición.
-3. En el selector de roles, marca los roles que correspondan.
-4. Guarda los cambios.
-5. Verifica en **Configuración > Acceso** que los permisos efectivos son los esperados.
+1. Ve al **listado de usuarios** y busca a la persona.
+2. Haz clic en **Editar** (desde las acciones de la fila o desde el perfil del usuario).
+3. En la sección de roles, marca los que correspondan.
+4. Haz clic en **Guardar**.
+5. Pide a la persona que revise en [Configuración > Acceso](/settings/access) si sus permisos son los correctos.
 
-## Cómo validar el resultado
+## ✅ ¿Cómo saber si funcionó?
 
-| Señal | Qué indica |
+| Señal | Significado |
 | --- | --- |
-| El rol aparece en el perfil | La asignación se guardó correctamente |
-| Los permisos efectivos incluyen lo esperado | El rol tiene los permisos necesarios |
-| No aparecen permisos adicionales inesperados | No se asignó más acceso del necesario |
+| El rol aparece en el perfil del usuario ✅ | Se guardó correctamente |
+| Los permisos que necesita están en su acceso ✅ | El rol tiene los permisos correctos |
+| No aparecen permisos que no debería tener ✅ | No se dio acceso de más |
 
-## Buenas prácticas
+> ⚠️ **Importante:** Si asignas un rol que no está activo, no tendrá ningún efecto. Verifica siempre que el rol esté en estado activo.
 
-- Asigna el mínimo de roles suficientes para el trabajo.
-- Si necesitas agregar un permiso puntual, evalúa si corresponde crear un rol específico o ajustar uno existente.
-- Documenta en tu equipo cuáles roles están pensados para qué función.
+## 💡 Buenas prácticas
+
+- Asigna la **menor cantidad de roles** posible que cubra lo que la persona necesita.
+- Si necesitas un permiso puntual que no está en ningún rol existente, evalúa si conviene [crear un nuevo rol](/help/roles-and-permissions/create-role) o [ajustar los permisos](/help/roles-and-permissions/assign-permissions) de uno existente.
+- Documenta internamente para qué sirve cada rol — así todo el equipo asigna de forma consistente.
+
+## 📖 Artículos relacionados
+
+- [Crear un rol](/help/roles-and-permissions/create-role) — Si no existe un rol adecuado.
+- [Asignar permisos a un rol](/help/roles-and-permissions/assign-permissions) — Para ajustar lo que un rol permite hacer.
+- [Revisar mi acceso](/help/security-access/review-my-access) — Para que la persona verifique sus propios permisos.

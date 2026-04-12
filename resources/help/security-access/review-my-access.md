@@ -1,34 +1,40 @@
 ---
 title: Revisar mi acceso actual
-summary: Guía para interpretar tus roles y permisos efectivos antes de solicitar cambios o reportar bloqueos.
+summary: Cómo ver qué puedes hacer en el sistema y desde qué roles vienen tus permisos.
 category: Seguridad y acceso
 order: 10
 ---
 
-Usa esta vista para entender qué permisos realmente están habilitados en tu cuenta y desde qué roles provienen.
+¿No puedes acceder a algo que necesitas? ¿No estás seguro de qué permisos tienes? Esta guía te ayuda a revisarlo tú mismo.
 
-## Lectura rápida
+## 🔍 ¿Dónde veo mis permisos?
 
-| Elemento           | Qué significa                             | Qué revisar                          |
-| ------------------ | ----------------------------------------- | ------------------------------------ |
-| Mis roles          | Roles asignados directamente a tu usuario | Si están activos y son los esperados |
-| Permisos efectivos | Resultado de combinar roles activos       | Si el permiso clave está presente    |
+Ve a **Configuración > Acceso** (desde el menú de tu usuario). Ahí encontrarás dos secciones:
 
-## Checklist
+| Sección | ¿Qué muestra? | ¿Qué buscar? |
+| --- | --- | --- |
+| **Mis roles** | Los roles que tienes asignados | Que estén activos y sean los correctos |
+| **Permisos efectivos** | Todas las acciones que puedes realizar | Que aparezca el permiso que necesitas |
 
-1. Abre **Configuración > Acceso**.
-2. Revisa si el rol esperado aparece en estado activo.
-3. Busca el grupo de permisos relacionado con tu tarea.
-4. Identifica desde qué rol llega cada permiso efectivo.
+> 💡 **¿Qué son los "permisos efectivos"?** Son la suma de todos los permisos de tus roles activos. Si tienes dos roles y cada uno permite cosas distintas, los permisos efectivos muestran todo junto.
 
-## Ejemplo útil
+## ✅ Lista de verificación rápida
 
-```text
-Si no puedes abrir un módulo, primero valida si el permiso de vista existe en tus permisos efectivos.
-```
+1. Abre [Configuración > Acceso](/settings/access).
+2. Busca el **rol** que debería darte acceso a lo que necesitas. ¿Aparece? ¿Está activo?
+3. Busca el **permiso específico** en la lista de permisos efectivos (usa el buscador si hay muchos).
+4. Si el permiso aparece pero sigues bloqueado, puede que la acción necesite **otro permiso adicional** o que tu cuenta tenga algún bloqueo de seguridad.
 
-## Cuando escalar
+## ⚠️ ¿Cuándo pedir ayuda a un administrador?
 
-- Si el rol correcto no aparece asignado.
-- Si el rol existe, pero está inactivo.
-- Si el permiso falta incluso con el rol esperado activo.
+Contacta a un administrador si:
+
+- **No ves el rol que deberías tener** → Te lo tienen que asignar.
+- **El rol aparece pero está inactivo** → Un administrador debe reactivarlo.
+- **Tienes el permiso pero no puedes hacer la acción** → Puede haber un bloqueo de seguridad en tu cuenta (como falta de verificación en dos pasos).
+- **No encuentras el permiso en ningún rol** → Puede que haya que [ajustar los permisos del rol](/help/roles-and-permissions/assign-permissions) o [crear uno nuevo](/help/roles-and-permissions/create-role).
+
+## 📖 Artículos relacionados
+
+- [Primeros pasos en la aplicación](/help/first-steps/getting-started) — Si es tu primera vez en el sistema.
+- [Asignar roles a un usuario](/help/users/assign-roles) — Para administradores que necesitan asignar roles a otras personas.

@@ -1,37 +1,44 @@
 ---
 title: Asignar permisos a un rol
-summary: Cómo seleccionar los permisos correctos al crear o editar un rol sin exceder el acceso necesario.
+summary: Cómo elegir los permisos correctos para un rol sin dar acceso de más ni de menos.
 category: Roles y permisos
 order: 30
 ---
 
-Los permisos definen qué acciones puede ejecutar un rol dentro de cada módulo. Seleccionarlos con precisión reduce el riesgo de acceso no intencional.
+Los **permisos** son las acciones concretas que alguien puede hacer en el sistema: ver datos, crear registros, editar, eliminar, etc. Cada rol agrupa un conjunto de permisos.
 
-## Cómo están organizados los permisos
+## 🧩 ¿Cómo están organizados los permisos?
 
-Los permisos se agrupan por módulo y tipo de operación:
+Los permisos se agrupan por **módulo** (la sección del sistema) y por **tipo de acción**. Por ejemplo:
 
-- `sistema.usuarios.ver` — permite listar y consultar usuarios
-- `sistema.usuarios.crear` — permite crear cuentas nuevas
-- `sistema.usuarios.editar` — permite modificar datos de cuentas existentes
-- `sistema.usuarios.eliminar` — permite borrar cuentas
+| Permiso | ¿Qué permite? |
+| --- | --- |
+| `sistema.usuarios.ver` | Ver el listado de usuarios y sus datos |
+| `sistema.usuarios.crear` | Crear cuentas nuevas |
+| `sistema.usuarios.editar` | Modificar datos de cuentas existentes |
+| `sistema.usuarios.eliminar` | Borrar cuentas |
 
-El patrón se repite para cada módulo del sistema.
+Este patrón se repite en cada módulo del sistema (roles, auditoría, etc.), con nombres similares.
 
-## Pasos para asignar permisos
+## 🚀 Paso a paso
 
-1. Abre el rol desde el listado o crea uno nuevo.
-2. Usa el selector de permisos agrupado por módulo.
-3. Marca solo los permisos necesarios para el caso.
-4. Guarda el rol.
-5. Asigna el rol a un usuario de prueba y verifica en **Configuración > Acceso** que los permisos efectivos coinciden.
+1. Abre el rol que quieres modificar desde el [listado de roles](/help/roles-and-permissions/manage-roles), o [crea uno nuevo](/help/roles-and-permissions/create-role).
+2. Busca el **selector de permisos**, que aparece agrupado por módulo.
+3. Marca **solo** los permisos que el rol necesita.
+4. Haz clic en **Guardar**.
+5. [Asigna el rol a un usuario](/help/users/assign-roles) de prueba y verifica que los permisos funcionan como esperas.
 
-## Regla práctica
+> ⚠️ **Regla de oro:** Si dudas entre incluir un permiso o no, **no lo incluyas**. Es mucho más fácil agregar un permiso después que investigar por qué alguien tuvo acceso a algo que no debía.
 
-Si dudas entre incluir o no un permiso, **no lo incluyas**. Es más fácil agregar un permiso después que auditar un acceso indebido.
+## ✅ ¿Cómo verificar que todo está bien?
 
-## Qué revisar después
+Después de guardar, comprueba estos tres puntos:
 
-- El usuario con el rol puede hacer lo esperado.
-- El usuario no puede hacer más de lo esperado.
-- El cambio queda registrado en la auditoría del sistema.
+1. **La persona puede hacer lo que necesita** — Pídele que pruebe las acciones principales.
+2. **La persona NO puede hacer lo que no debería** — Verifica que no tenga acceso extra.
+3. **El cambio quedó registrado** — Revisa en la [auditoría](/help/audit/review-audit-events) que el cambio de permisos aparece.
+
+## 📖 Artículos relacionados
+
+- [Crear un rol](/help/roles-and-permissions/create-role) — Si necesitas un rol nuevo antes de asignar permisos.
+- [Revisar mi acceso](/help/security-access/review-my-access) — Para que la persona verifique sus permisos desde su propio perfil.

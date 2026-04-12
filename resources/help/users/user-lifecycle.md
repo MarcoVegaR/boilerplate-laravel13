@@ -1,42 +1,50 @@
 ---
 title: Estados y ciclo de vida de un usuario
-summary: Referencia de los estados posibles de una cuenta y qué operaciones están disponibles en cada uno.
+summary: Entiende los estados posibles de una cuenta (activo, inactivo, etc.) y qué puedes hacer en cada uno.
 category: Usuarios
 order: 50
 ---
 
-Cada cuenta pasa por distintos estados según su configuración de seguridad y actividad operativa.
+Cada cuenta de usuario pasa por distintos estados a lo largo del tiempo. Entender estos estados te ayuda a saber por qué alguien puede o no puede entrar al sistema.
 
-## Estados posibles
+## 🚦 Estados posibles
 
-| Estado | Qué significa | Puede iniciar sesión |
+| Estado | ¿Qué significa? | ¿Puede entrar? |
 | --- | --- | --- |
-| **Activo** | Cuenta habilitada y configurada | Sí, según requisitos de seguridad |
-| **Inactivo** | Cuenta suspendida manualmente | No |
-| **Sin verificar** | Correo pendiente de confirmación | No |
-| **Sin segundo factor** | Entorno con 2FA obligatorio y factor no configurado | No |
+| **Activo** ✅ | La cuenta está habilitada y lista para trabajar | Sí |
+| **Inactivo** 🔒 | Un administrador suspendió la cuenta | No |
+| **Sin verificar** 📧 | La persona aún no confirmó su correo electrónico | No |
+| **Sin segundo factor** 🔐 | El sistema exige verificación en dos pasos, pero la persona aún no la configuró | No |
 
-## Transiciones típicas
+## 🔄 ¿Cómo cambia el estado de una cuenta?
 
-```text
-Creación → Sin verificar → Activo → Inactivo → Activo
-```
+El camino típico de una cuenta se ve así:
 
-- Una cuenta recién creada puede no tener el correo verificado si el entorno lo exige.
-- Un usuario activo puede desactivarse en cualquier momento.
-- Un usuario inactivo puede reactivarse sin perder configuración ni auditoría.
+**Creación** → **Sin verificar** → **Activo** → **Inactivo** → **Activo** (reactivación)
 
-## Operaciones por estado
+- Cuando se crea una cuenta, puede quedar como "sin verificar" si el sistema exige confirmar el correo.
+- Un administrador puede **desactivar** una cuenta activa en cualquier momento.
+- Una cuenta inactiva puede **reactivarse** sin perder datos ni historial.
+- Si el sistema exige verificación en dos pasos, la cuenta queda bloqueada hasta que la persona la configure.
 
-| Operación | Activo | Inactivo |
+## 📋 ¿Qué puedes hacer en cada estado?
+
+| Acción | Activo ✅ | Inactivo 🔒 |
 | --- | --- | --- |
-| Editar datos | ✅ | ✅ |
-| Asignar roles | ✅ | ✅ |
-| Desactivar | ✅ | — |
-| Reactivar | — | ✅ |
-| Reiniciar contraseña | ✅ | ✅ |
-| Ver auditoría | ✅ | ✅ |
+| Editar datos | ✅ Sí | ✅ Sí |
+| Asignar roles | ✅ Sí | ✅ Sí |
+| Desactivar | ✅ Sí | — |
+| Reactivar | — | ✅ Sí |
+| Enviar enlace para nueva contraseña | ✅ Sí | ✅ Sí |
+| Ver historial de auditoría | ✅ Sí | ✅ Sí |
 
-## Punto de control antes de actuar
+> 💡 **Consejo:** Puedes editar los datos y roles de una cuenta inactiva. Esto es útil para preparar todo antes de reactivarla.
 
-Antes de cambiar el estado de una cuenta, revisa en la auditoría si tiene actividad reciente para entender el impacto del cambio.
+## ⚠️ Antes de cambiar el estado de una cuenta
+
+Revisa en la [auditoría](/help/audit/review-audit-events) si la persona tiene actividad reciente. Desactivar una cuenta en medio de una operación puede causar problemas.
+
+## 📖 Artículos relacionados
+
+- [Desactivar un usuario](/help/users/deactivate-user) — Paso a paso para suspender el acceso.
+- [Gestionar usuarios](/help/users/manage-users) — Para trabajar con el listado completo de cuentas.

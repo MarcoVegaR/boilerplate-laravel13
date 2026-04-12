@@ -7,6 +7,7 @@ import {
     index,
     update,
 } from '@/actions/App/Http/Controllers/System/RoleController';
+import { HelpLink } from '@/components/help/help-link';
 import InputError from '@/components/input-error';
 import { PageHeader } from '@/components/system/page-header';
 import { PermissionPicker } from '@/components/system/permission-picker';
@@ -87,6 +88,12 @@ export default function RoleEdit({
                         icon={Pencil}
                         title={`Editar rol: ${role.display_name ?? role.name}`}
                         description="Modifica los datos del rol y sus permisos asignados."
+                        actions={
+                            <HelpLink
+                                category="roles-and-permissions"
+                                slug="assign-permissions"
+                            />
+                        }
                     />
                     <Form {...update.form(role)} className="space-y-6">
                         {({ errors, processing }) => (

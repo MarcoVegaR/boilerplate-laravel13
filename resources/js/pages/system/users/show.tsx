@@ -23,6 +23,7 @@ import {
 import ActivateUserController from '@/actions/App/Http/Controllers/System/Users/ActivateUserController';
 import DeactivateUserController from '@/actions/App/Http/Controllers/System/Users/DeactivateUserController';
 import SendPasswordResetController from '@/actions/App/Http/Controllers/System/Users/SendPasswordResetController';
+import { HelpLink } from '@/components/help/help-link';
 import { CopilotSheet } from '@/components/system/copilot/copilot-sheet';
 import { StatCard } from '@/components/system/stat-card';
 import { StatusBadge } from '@/components/system/status-badge';
@@ -319,6 +320,11 @@ export default function UserShow({ user, groupedEffectivePermissions }: Props) {
                                     </Link>
                                 </Button>
                             )}
+
+                            <HelpLink
+                                category="users"
+                                slug="user-lifecycle"
+                            />
 
                             <CopilotSheet
                                 subjectUser={{

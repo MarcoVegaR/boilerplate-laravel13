@@ -1,3 +1,5 @@
+import { Link } from '@inertiajs/react';
+import { Children, isValidElement } from 'react';
 import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -46,24 +48,68 @@ export function HelpArticleContent({
             <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
-                    a: ({ href, children, ...props }) => (
-                        <a
-                            href={href}
-                            target={isExternalHref(href) ? '_blank' : undefined}
-                            rel={
-                                isExternalHref(href) ? 'noreferrer' : undefined
+                    a: ({ href, children, ...props }) => {
+                        if (!href || isExternalHref(href)) {
+                            return (
+                                <a
+                                    href={href}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="font-medium text-primary underline-offset-4 hover:underline"
+                                    {...props}
+                                >
+                                    {children}
+                                </a>
+                            );
+                        }
+
+                        return (
+                            <Link
+                                href={href}
+                                className="font-medium text-primary underline-offset-4 hover:underline"
+                            >
+                                {children}
+                            </Link>
+                        );
+                    },
+                    blockquote: ({ children }) => {
+                        let text = '';
+                        Children.forEach(children, (child) => {
+                            if (text) return;
+                            if (isValidElement(child)) {
+                                const inner = (child.props as { children?: ReactNode }).children;
+                                text = String(
+                                    Array.isArray(inner) ? inner[0] ?? '' : inner ?? '',
+                                );
                             }
-                            className="font-medium text-primary underline-offset-4 hover:underline"
-                            {...props}
-                        >
-                            {children}
-                        </a>
-                    ),
-                    blockquote: ({ children }) => (
-                        <blockquote className="my-4 border-l-4 border-primary/30 bg-primary/5 px-4 py-3 text-sm text-foreground/80 [&>p]:my-0">
-                            {children}
-                        </blockquote>
-                    ),
+                        });
+
+                        const isWarning = text.startsWith('⚠️');
+                        const isTip =
+                            text.startsWith('💡') || text.startsWith('✅');
+
+                        if (isWarning) {
+                            return (
+                                <blockquote className="my-4 rounded-lg border-l-4 border-amber-500/40 bg-amber-500/5 px-4 py-3 text-sm text-foreground/80 dark:border-amber-400/30 dark:bg-amber-400/5 [&>p]:my-0">
+                                    {children}
+                                </blockquote>
+                            );
+                        }
+
+                        if (isTip) {
+                            return (
+                                <blockquote className="my-4 rounded-lg border-l-4 border-emerald-500/40 bg-emerald-500/5 px-4 py-3 text-sm text-foreground/80 dark:border-emerald-400/30 dark:bg-emerald-400/5 [&>p]:my-0">
+                                    {children}
+                                </blockquote>
+                            );
+                        }
+
+                        return (
+                            <blockquote className="my-4 rounded-lg border-l-4 border-primary/30 bg-primary/5 px-4 py-3 text-sm text-foreground/80 [&>p]:my-0">
+                                {children}
+                            </blockquote>
+                        );
+                    },
                     code: ({
                         className: codeClassName,
                         children,

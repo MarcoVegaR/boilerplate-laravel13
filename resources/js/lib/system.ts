@@ -1,8 +1,12 @@
 import {
     Eye,
+    Footprints,
+    KeyRound,
     LayoutDashboard,
     ScrollText,
+    Settings,
     ShieldCheck,
+    ShieldEllipsis,
     Users,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -110,4 +114,53 @@ export function auditableTypeLabel(value?: string | null): string {
 
 export function metadataKeyLabel(value: string): string {
     return metadataKeyLabels[value] ?? value.replaceAll('_', ' ');
+}
+
+type HelpCategoryMeta = {
+    icon: LucideIcon;
+    description: string;
+};
+
+const helpCategoryMeta: Record<string, HelpCategoryMeta> = {
+    'first-steps': {
+        icon: Footprints,
+        description:
+            'Lo básico para empezar a trabajar en el sistema desde el primer día.',
+    },
+    users: {
+        icon: Users,
+        description:
+            'Crea, edita y gestiona las cuentas de las personas que usan el sistema.',
+    },
+    'roles-and-permissions': {
+        icon: ShieldEllipsis,
+        description:
+            'Controla quién puede hacer qué, creando roles y asignando permisos.',
+    },
+    'security-access': {
+        icon: KeyRound,
+        description:
+            'Revisa tu propio acceso y entiende cómo funcionan los permisos de tu cuenta.',
+    },
+    settings: {
+        icon: Settings,
+        description:
+            'Ajusta tu perfil, contraseña, verificación en dos pasos y apariencia.',
+    },
+    audit: {
+        icon: ScrollText,
+        description:
+            'Consulta el historial de actividad: quién hizo qué y cuándo.',
+    },
+};
+
+export function helpCategoryIcon(key: string): LucideIcon | undefined {
+    return helpCategoryMeta[key]?.icon;
+}
+
+export function helpCategoryDescription(key: string): string {
+    return (
+        helpCategoryMeta[key]?.description ??
+        'Guías operativas para tareas frecuentes de esta área.'
+    );
 }

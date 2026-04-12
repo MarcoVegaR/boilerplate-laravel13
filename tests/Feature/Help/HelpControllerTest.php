@@ -68,12 +68,12 @@ it('renders the help index for protected-shell users', function () {
         ->assertInertia(fn (Assert $page) => $page
             ->component('help/index')
             ->has('categories', 2)
-            ->where('categories.0.key', 'audit')
-            ->where('categories.0.label', 'Auditoría')
-            ->where('categories.1.key', 'users')
-            ->where('categories.1.articles.0.slug', 'manage-access')
-            ->where('categories.1.articles.1.slug', 'invite-user')
-            ->where('categories.1.articles.0.url', route('help.show', ['category' => 'users', 'slug' => 'manage-access'], absolute: false))
+            ->where('categories.0.key', 'users')
+            ->where('categories.0.label', 'Usuarios')
+            ->where('categories.0.articles.0.slug', 'manage-access')
+            ->where('categories.0.articles.1.slug', 'invite-user')
+            ->where('categories.1.key', 'audit')
+            ->where('categories.1.label', 'Auditoría')
             ->where('filters.category', null)
             ->where('breadcrumbs.0.href', route('help.index', absolute: false))
         );
@@ -146,8 +146,11 @@ it('resolves every article slug referenced by contextual HelpLinks in module scr
     $referenced = [
         ['category' => 'users', 'slug' => 'manage-users'],
         ['category' => 'users', 'slug' => 'create-user'],
+        ['category' => 'users', 'slug' => 'assign-roles'],
+        ['category' => 'users', 'slug' => 'user-lifecycle'],
         ['category' => 'roles-and-permissions', 'slug' => 'manage-roles'],
         ['category' => 'roles-and-permissions', 'slug' => 'create-role'],
+        ['category' => 'roles-and-permissions', 'slug' => 'assign-permissions'],
         ['category' => 'audit', 'slug' => 'review-audit-events'],
         ['category' => 'security-access', 'slug' => 'review-my-access'],
     ];
@@ -168,8 +171,11 @@ it('serves every HelpLink article slug as a 200 response for an authenticated us
     $referenced = [
         ['category' => 'users', 'slug' => 'manage-users'],
         ['category' => 'users', 'slug' => 'create-user'],
+        ['category' => 'users', 'slug' => 'assign-roles'],
+        ['category' => 'users', 'slug' => 'user-lifecycle'],
         ['category' => 'roles-and-permissions', 'slug' => 'manage-roles'],
         ['category' => 'roles-and-permissions', 'slug' => 'create-role'],
+        ['category' => 'roles-and-permissions', 'slug' => 'assign-permissions'],
         ['category' => 'audit', 'slug' => 'review-audit-events'],
         ['category' => 'security-access', 'slug' => 'review-my-access'],
     ];

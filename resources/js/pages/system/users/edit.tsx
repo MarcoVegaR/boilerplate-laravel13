@@ -8,6 +8,7 @@ import {
     update,
 } from '@/actions/App/Http/Controllers/System/UserController';
 import DeactivateUserController from '@/actions/App/Http/Controllers/System/Users/DeactivateUserController';
+import { HelpLink } from '@/components/help/help-link';
 import InputError from '@/components/input-error';
 import { PageHeader } from '@/components/system/page-header';
 import { RoleSelector } from '@/components/system/role-selector';
@@ -68,6 +69,9 @@ export default function UserEdit({ user, roles }: Props) {
                         icon={Pencil}
                         title={`Editar usuario: ${user.name}`}
                         description="Modifica los datos del usuario. Para cambiar la contraseña, usa la opción de enviar correo de restablecimiento."
+                        actions={
+                            <HelpLink category="users" slug="assign-roles" />
+                        }
                     />
                     <Form {...update.form(user)} className="space-y-6">
                         {({ errors, processing }) => (

@@ -1,5 +1,6 @@
 import { Head, Link } from '@inertiajs/react';
-import { ArrowLeft, ArrowRight, BookOpenText } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BookOpenText, Clock } from 'lucide-react';
+import { useMemo } from 'react';
 
 import { index as helpIndex } from '@/actions/App/Http/Controllers/HelpController';
 import { HelpArticleContent } from '@/components/help/help-article-content';
@@ -7,14 +8,26 @@ import { PageHeader } from '@/components/system/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { helpCategoryIcon } from '@/lib/system';
 import AppLayout from '@/layouts/app-layout';
 import type { HelpShowProps } from '@/types';
+
+function estimateReadTime(content: string): number {
+    const words = content.trim().split(/\s+/).length;
+    return Math.max(1, Math.round(words / 200));
+}
 
 export default function HelpShow({
     article,
     breadcrumbs,
     categoryArticles,
 }: HelpShowProps) {
+    const readTime = useMemo(
+        () => estimateReadTime(article.content),
+        [article.content],
+    );
+    const SidebarIcon = helpCategoryIcon(article.category) ?? BookOpenText;
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title={article.title} />
@@ -32,6 +45,7 @@ export default function HelpShow({
                                 })}
                                 prefetch
                             >
+                                <ArrowLeft className="size-4" />
                                 Volver a {article.category_label}
                             </Link>
                         </Button>
@@ -42,10 +56,14 @@ export default function HelpShow({
                     <div className="space-y-6">
                         <Card className="gap-0 py-0">
                             <CardContent className="py-6">
-                                <div className="mb-5">
+                                <div className="mb-5 flex flex-wrap items-center gap-2">
                                     <Badge variant="secondary">
                                         {article.category_label}
                                     </Badge>
+                                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                        <Clock className="size-3" />
+                                        {readTime} min de lectura
+                                    </span>
                                 </div>
                                 <HelpArticleContent content={article.content} />
                             </CardContent>
@@ -100,7 +118,8 @@ export default function HelpShow({
 
                     <Card className="gap-0 py-0 xl:sticky xl:top-6 xl:self-start">
                         <CardHeader className="gap-0.5 border-b py-4">
-                            <p className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
+                            <p className="flex items-center gap-1.5 text-xs font-medium tracking-wider text-muted-foreground uppercase">
+                                <SidebarIcon className="size-3.5" />
                                 {article.category_label}
                             </p>
                             <CardTitle className="text-sm">

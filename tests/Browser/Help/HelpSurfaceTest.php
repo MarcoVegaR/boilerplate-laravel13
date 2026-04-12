@@ -60,8 +60,8 @@ it('renders markdown help articles with headings tables and code blocks', functi
 
     visit(route('help.show', ['category' => 'security-access', 'slug' => 'review-my-access'], false))
         ->assertSee('Revisar mi acceso actual')
-        ->assertSee('Lectura rápida')
+        ->assertSee('¿Dónde veo mis permisos?')
         ->assertSee('Permisos efectivos')
-        ->assertSee('Si no puedes abrir un módulo')
+        ->assertSee('¿Cuándo pedir ayuda a un administrador?')
         ->assertNoJavaScriptErrors();
 });

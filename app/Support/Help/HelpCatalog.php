@@ -133,7 +133,7 @@ class HelpCatalog
         }
 
         usort($articles, function (array $left, array $right): int {
-            $categoryComparison = strcasecmp($left['category_label'], $right['category_label']);
+            $categoryComparison = $this->categoryPriority($left['category']) <=> $this->categoryPriority($right['category']);
 
             if ($categoryComparison !== 0) {
                 return $categoryComparison;
@@ -149,6 +149,22 @@ class HelpCatalog
         });
 
         return $this->articles = $articles;
+    }
+
+    private const array CATEGORY_ORDER = [
+        'first-steps',
+        'users',
+        'roles-and-permissions',
+        'security-access',
+        'settings',
+        'audit',
+    ];
+
+    private function categoryPriority(string $category): int
+    {
+        $index = array_search($category, self::CATEGORY_ORDER, true);
+
+        return $index !== false ? $index : PHP_INT_MAX;
     }
 
     /**

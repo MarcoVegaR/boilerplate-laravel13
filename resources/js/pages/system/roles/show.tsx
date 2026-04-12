@@ -20,6 +20,7 @@ import {
     show as showAction,
 } from '@/actions/App/Http/Controllers/System/RoleController';
 import RoleDeactivateController from '@/actions/App/Http/Controllers/System/RoleDeactivateController';
+import { HelpLink } from '@/components/help/help-link';
 import { StatCard } from '@/components/system/stat-card';
 import { StatusBadge } from '@/components/system/status-badge';
 import { UserAvatar } from '@/components/system/user-avatar';
@@ -220,6 +221,11 @@ export default function RoleShow({ role, groupedPermissions }: Props) {
                                     </Link>
                                 </Button>
                             )}
+
+                            <HelpLink
+                                category="roles-and-permissions"
+                                slug="manage-roles"
+                            />
 
                             {canDeactivate && role.is_active && (
                                 <Button

@@ -1,8 +1,8 @@
-import { Head, router } from '@inertiajs/react';
-import { BookOpenText, Search, Sparkles } from 'lucide-react';
+import { Head, Link, router } from '@inertiajs/react';
+import { BookOpenText, Footprints, Search, Sparkles } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
-import { index as helpIndex } from '@/actions/App/Http/Controllers/HelpController';
+import { index as helpIndex, show as helpShow } from '@/actions/App/Http/Controllers/HelpController';
 import { HelpCategoryCard } from '@/components/help/help-category-card';
 import { PageHeader } from '@/components/system/page-header';
 import { Badge } from '@/components/ui/badge';
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
+import { helpCategoryIcon } from '@/lib/system';
 import AppLayout from '@/layouts/app-layout';
 import type { HelpCategory, HelpIndexProps } from '@/types';
 
@@ -66,7 +67,7 @@ export default function HelpIndex({
                 <PageHeader
                     icon={BookOpenText}
                     title="Centro de ayuda"
-                    description="Documentación operativa versionada dentro de la aplicación para tareas frecuentes del equipo."
+                    description="Encuentra guías paso a paso para las tareas más comunes del sistema. Si es tu primera vez, empieza por los primeros pasos."
                     actions={
                         filters.category || searchQuery ? (
                             <Button
@@ -83,6 +84,35 @@ export default function HelpIndex({
                         ) : undefined
                     }
                 />
+
+                {!filters.category && !searchQuery && (
+                    <Card className="gap-0 border-primary/20 bg-primary/5 py-0">
+                        <CardContent className="flex items-center gap-4 py-5">
+                            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20">
+                                <Footprints className="size-5" />
+                            </div>
+                            <div className="flex-1 space-y-0.5">
+                                <p className="text-sm font-medium text-foreground">
+                                    ¿Primera vez en el sistema?
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                    Revisa la guía de primeros pasos para verificar que tu cuenta esté lista.
+                                </p>
+                            </div>
+                            <Button asChild size="sm" variant="outline">
+                                <Link
+                                    href={helpShow.url({
+                                        category: 'first-steps',
+                                        slug: 'getting-started',
+                                    })}
+                                    prefetch
+                                >
+                                    Comenzar
+                                </Link>
+                            </Button>
+                        </CardContent>
+                    </Card>
+                )}
 
                 <Card className="gap-0 py-0">
                     <CardContent className="space-y-5 py-6">
@@ -124,23 +154,30 @@ export default function HelpIndex({
                                 Todas
                             </Button>
 
-                            {categories.map((category) => (
-                                <Button
-                                    key={category.key}
-                                    type="button"
-                                    size="sm"
-                                    variant={
-                                        filters.category === category.key
-                                            ? 'default'
-                                            : 'outline'
-                                    }
-                                    onClick={() =>
-                                        handleCategoryChange(category.key)
-                                    }
-                                >
-                                    {category.label}
-                                </Button>
-                            ))}
+                            {categories.map((category) => {
+                                const CatIcon = helpCategoryIcon(category.key);
+
+                                return (
+                                    <Button
+                                        key={category.key}
+                                        type="button"
+                                        size="sm"
+                                        variant={
+                                            filters.category === category.key
+                                                ? 'default'
+                                                : 'outline'
+                                        }
+                                        onClick={() =>
+                                            handleCategoryChange(category.key)
+                                        }
+                                    >
+                                        {CatIcon && (
+                                            <CatIcon className="size-3.5" />
+                                        )}
+                                        {category.label}
+                                    </Button>
+                                );
+                            })}
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
