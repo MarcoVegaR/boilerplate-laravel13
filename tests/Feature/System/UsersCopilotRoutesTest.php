@@ -1166,22 +1166,24 @@ it('searches users by name through the gemini orchestrator', function () {
 
     $user = authorizedCopilotOperator();
 
+    $uniqueName = 'Zxqtest Copilotuser';
+
     User::factory()->active()->create([
-        'name' => 'Daniel Bustos',
-        'email' => 'daniel@example.com',
+        'name' => $uniqueName,
+        'email' => 'zxqtest-copilotuser@example.com',
     ]);
 
     UsersGeminiCopilotAgent::fake(['Respuesta plana'])->preventStrayPrompts();
 
     $this->actingAs($user)
         ->postJson(route('system.users.copilot.messages'), [
-            'prompt' => 'Busca usuarios con nombre Daniel',
+            'prompt' => 'Busca usuarios con nombre Zxqtest',
         ])
         ->assertSuccessful()
         ->assertJsonPath('response.intent', 'search_results')
         ->assertJsonPath('response.meta.capability_key', 'users.search')
         ->assertJsonPath('response.cards.0.kind', 'search_results')
-        ->assertJsonPath('response.cards.0.data.users.0.name', 'Daniel Bustos')
+        ->assertJsonPath('response.cards.0.data.users.0.name', $uniqueName)
         ->assertJsonPath('response.meta.fallback', false);
 });
 
