@@ -29,9 +29,9 @@ import ActivateUserController from '@/actions/App/Http/Controllers/System/Users/
 import DeactivateUserController from '@/actions/App/Http/Controllers/System/Users/DeactivateUserController';
 import ExportUsersController from '@/actions/App/Http/Controllers/System/Users/ExportUsersController';
 import SendPasswordResetController from '@/actions/App/Http/Controllers/System/Users/SendPasswordResetController';
+import { HelpLink } from '@/components/help/help-link';
 import { BulkActionBar } from '@/components/system/bulk-action-bar';
 import { CopilotSheet } from '@/components/system/copilot/copilot-sheet';
-import { HelpLink } from '@/components/help/help-link';
 import { PageHeader } from '@/components/system/page-header';
 import { StatusBadge } from '@/components/system/status-badge';
 import { UserAvatar } from '@/components/system/user-avatar';

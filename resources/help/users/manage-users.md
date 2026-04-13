@@ -24,10 +24,10 @@ Desde el listado de usuarios puedes ver todas las cuentas del sistema, buscar pe
 
 ## 🚦 ¿Qué significan los estados?
 
-| Estado | Significado |
-| --- | --- |
-| **Activo** ✅ | La persona puede ingresar al sistema (si cumple los requisitos de seguridad) |
-| **Inactivo** 🔒 | La cuenta existe pero la persona no puede iniciar sesión |
+| Estado           | Significado                                                                    |
+| ---------------- | ------------------------------------------------------------------------------ |
+| **Activo** ✅    | La persona puede ingresar al sistema (si cumple los requisitos de seguridad)   |
+| **Inactivo** 🔒  | La cuenta existe pero la persona no puede iniciar sesión                       |
 | **Sin roles** ⚠️ | La cuenta no tiene permisos asignados — probablemente no podrá hacer nada útil |
 
 ## 📖 Artículos relacionados

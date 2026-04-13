@@ -1,6 +1,6 @@
 import { Head, Link } from '@inertiajs/react';
 import { ArrowLeft, ArrowRight, BookOpenText, Clock } from 'lucide-react';
-import { useMemo } from 'react';
+import { createElement, useMemo } from 'react';
 
 import { index as helpIndex } from '@/actions/App/Http/Controllers/HelpController';
 import { HelpArticleContent } from '@/components/help/help-article-content';
@@ -8,12 +8,13 @@ import { PageHeader } from '@/components/system/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { helpCategoryIcon } from '@/lib/system';
 import AppLayout from '@/layouts/app-layout';
+import { helpCategoryIcon } from '@/lib/system';
 import type { HelpShowProps } from '@/types';
 
 function estimateReadTime(content: string): number {
     const words = content.trim().split(/\s+/).length;
+
     return Math.max(1, Math.round(words / 200));
 }
 
@@ -26,7 +27,7 @@ export default function HelpShow({
         () => estimateReadTime(article.content),
         [article.content],
     );
-    const SidebarIcon = helpCategoryIcon(article.category) ?? BookOpenText;
+    const sidebarIcon = helpCategoryIcon(article.category) ?? BookOpenText;
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -119,7 +120,9 @@ export default function HelpShow({
                     <Card className="gap-0 py-0 xl:sticky xl:top-6 xl:self-start">
                         <CardHeader className="gap-0.5 border-b py-4">
                             <p className="flex items-center gap-1.5 text-xs font-medium tracking-wider text-muted-foreground uppercase">
-                                <SidebarIcon className="size-3.5" />
+                                {createElement(sidebarIcon, {
+                                    className: 'size-3.5',
+                                })}
                                 {article.category_label}
                             </p>
                             <CardTitle className="text-sm">

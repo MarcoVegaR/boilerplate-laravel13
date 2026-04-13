@@ -9,12 +9,12 @@ Cada cuenta de usuario pasa por distintos estados a lo largo del tiempo. Entende
 
 ## 🚦 Estados posibles
 
-| Estado | ¿Qué significa? | ¿Puede entrar? |
-| --- | --- | --- |
-| **Activo** ✅ | La cuenta está habilitada y lista para trabajar | Sí |
-| **Inactivo** 🔒 | Un administrador suspendió la cuenta | No |
-| **Sin verificar** 📧 | La persona aún no confirmó su correo electrónico | No |
-| **Sin segundo factor** 🔐 | El sistema exige verificación en dos pasos, pero la persona aún no la configuró | No |
+| Estado                    | ¿Qué significa?                                                                 | ¿Puede entrar? |
+| ------------------------- | ------------------------------------------------------------------------------- | -------------- |
+| **Activo** ✅             | La cuenta está habilitada y lista para trabajar                                 | Sí             |
+| **Inactivo** 🔒           | Un administrador suspendió la cuenta                                            | No             |
+| **Sin verificar** 📧      | La persona aún no confirmó su correo electrónico                                | No             |
+| **Sin segundo factor** 🔐 | El sistema exige verificación en dos pasos, pero la persona aún no la configuró | No             |
 
 ## 🔄 ¿Cómo cambia el estado de una cuenta?
 
@@ -29,14 +29,14 @@ El camino típico de una cuenta se ve así:
 
 ## 📋 ¿Qué puedes hacer en cada estado?
 
-| Acción | Activo ✅ | Inactivo 🔒 |
-| --- | --- | --- |
-| Editar datos | ✅ Sí | ✅ Sí |
-| Asignar roles | ✅ Sí | ✅ Sí |
-| Desactivar | ✅ Sí | — |
-| Reactivar | — | ✅ Sí |
-| Enviar enlace para nueva contraseña | ✅ Sí | ✅ Sí |
-| Ver historial de auditoría | ✅ Sí | ✅ Sí |
+| Acción                              | Activo ✅ | Inactivo 🔒 |
+| ----------------------------------- | --------- | ----------- |
+| Editar datos                        | ✅ Sí     | ✅ Sí       |
+| Asignar roles                       | ✅ Sí     | ✅ Sí       |
+| Desactivar                          | ✅ Sí     | —           |
+| Reactivar                           | —         | ✅ Sí       |
+| Enviar enlace para nueva contraseña | ✅ Sí     | ✅ Sí       |
+| Ver historial de auditoría          | ✅ Sí     | ✅ Sí       |
 
 > 💡 **Consejo:** Puedes editar los datos y roles de una cuenta inactiva. Esto es útil para preparar todo antes de reactivarla.
 

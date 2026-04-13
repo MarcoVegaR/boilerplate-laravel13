@@ -11,12 +11,12 @@ Los **permisos** son las acciones concretas que alguien puede hacer en el sistem
 
 Los permisos se agrupan por **módulo** (la sección del sistema) y por **tipo de acción**. Por ejemplo:
 
-| Permiso | ¿Qué permite? |
-| --- | --- |
-| `sistema.usuarios.ver` | Ver el listado de usuarios y sus datos |
-| `sistema.usuarios.crear` | Crear cuentas nuevas |
-| `sistema.usuarios.editar` | Modificar datos de cuentas existentes |
-| `sistema.usuarios.eliminar` | Borrar cuentas |
+| Permiso                     | ¿Qué permite?                          |
+| --------------------------- | -------------------------------------- |
+| `sistema.usuarios.ver`      | Ver el listado de usuarios y sus datos |
+| `sistema.usuarios.crear`    | Crear cuentas nuevas                   |
+| `sistema.usuarios.editar`   | Modificar datos de cuentas existentes  |
+| `sistema.usuarios.eliminar` | Borrar cuentas                         |
 
 Este patrón se repite en cada módulo del sistema (roles, auditoría, etc.), con nombres similares.
 

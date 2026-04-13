@@ -10,6 +10,7 @@ Un **rol** es un conjunto de permisos que puedes asignar a una o varias personas
 ## 📝 Antes de empezar
 
 Hazte estas preguntas:
+
 - ¿Ya existe un [rol similar](/help/roles-and-permissions/manage-roles) que puedas reutilizar o ajustar?
 - ¿Más de una persona va a necesitar este rol?
 - ¿Puedes explicar en una frase para qué sirve?

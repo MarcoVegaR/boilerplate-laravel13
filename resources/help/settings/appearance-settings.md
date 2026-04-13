@@ -15,10 +15,10 @@ Puedes elegir cómo se ve la interfaz del sistema. Los cambios solo afectan a tu
 
 ## 🎨 Opciones disponibles
 
-| Opción | ¿Qué hace? |
-| --- | --- |
-| **Claro** ☀️ | Fondo blanco con texto oscuro |
-| **Oscuro** 🌙 | Fondo oscuro con texto claro — ideal para reducir cansancio visual |
+| Opción         | ¿Qué hace?                                                         |
+| -------------- | ------------------------------------------------------------------ |
+| **Claro** ☀️   | Fondo blanco con texto oscuro                                      |
+| **Oscuro** 🌙  | Fondo oscuro con texto claro — ideal para reducir cansancio visual |
 | **Sistema** 💻 | Se ajusta automáticamente según la configuración de tu dispositivo |
 
 > 💡 **Consejo:** Si trabajas muchas horas frente a la pantalla, prueba el modo oscuro. Suele ser más cómodo para los ojos.

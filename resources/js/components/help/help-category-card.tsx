@@ -1,5 +1,6 @@
 import { Link } from '@inertiajs/react';
 import { ArrowRight, BookOpenText } from 'lucide-react';
+import { createElement } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import {
@@ -17,7 +18,7 @@ type HelpCategoryCardProps = {
 };
 
 export function HelpCategoryCard({ category }: HelpCategoryCardProps) {
-    const Icon = helpCategoryIcon(category.key) ?? BookOpenText;
+    const icon = helpCategoryIcon(category.key) ?? BookOpenText;
 
     return (
         <Card className="gap-0 py-0">
@@ -25,7 +26,7 @@ export function HelpCategoryCard({ category }: HelpCategoryCardProps) {
                 <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-3">
                         <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20">
-                            <Icon className="size-4" />
+                            {createElement(icon, { className: 'size-4' })}
                         </div>
                         <div className="space-y-1">
                             <CardTitle className="text-lg">

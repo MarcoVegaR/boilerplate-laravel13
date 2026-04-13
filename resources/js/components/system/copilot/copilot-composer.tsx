@@ -1,5 +1,5 @@
 import { SendHorizontal } from 'lucide-react';
-import { FormEvent } from 'react';
+import type { FormEvent } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';

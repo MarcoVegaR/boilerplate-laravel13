@@ -16,11 +16,11 @@ order: 10
 
 ## 🗺️ ¿Por dónde empezar?
 
-| Tarea | Dónde ir | ¿Qué verás? |
-| --- | --- | --- |
-| Revisar tu perfil | [Configuración > Perfil](/settings/profile) | Tu nombre, correo y datos personales |
-| Confirmar seguridad | [Configuración > Seguridad](/settings/security) | Estado de tu contraseña y verificación en dos pasos |
-| Ver tus permisos | [Configuración > Acceso](/settings/access) | Los roles que tienes y las acciones que puedes realizar |
+| Tarea               | Dónde ir                                        | ¿Qué verás?                                             |
+| ------------------- | ----------------------------------------------- | ------------------------------------------------------- |
+| Revisar tu perfil   | [Configuración > Perfil](/settings/profile)     | Tu nombre, correo y datos personales                    |
+| Confirmar seguridad | [Configuración > Seguridad](/settings/security) | Estado de tu contraseña y verificación en dos pasos     |
+| Ver tus permisos    | [Configuración > Acceso](/settings/access)      | Los roles que tienes y las acciones que puedes realizar |
 
 > 💡 **Consejo:** Dedica 2 minutos a revisar estos tres puntos antes de empezar a trabajar. Así evitas bloqueos innecesarios.
 

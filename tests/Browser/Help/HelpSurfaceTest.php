@@ -15,7 +15,12 @@ beforeEach(function () {
     $this->seed(AccessModulePermissionsSeeder::class);
     $this->seed(AuditModulePermissionsSeeder::class);
 
-    Vite::useHotFile(storage_path('framework/testing/vite.hot'));
+    $hotPath = storage_path('framework/testing/vite.hot');
+    if (file_exists($hotPath)) {
+        unlink($hotPath);
+    }
+
+    Vite::useHotFile($hotPath);
 });
 
 it('shows global and contextual help entry points across the MVP screens', function () {

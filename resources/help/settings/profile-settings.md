@@ -15,9 +15,9 @@ Tu perfil contiene los datos que el sistema usa para identificarte: nombre y cor
 
 ## 📝 ¿Qué puedo cambiar?
 
-| Campo | ¿Qué es? | ¿Puedo cambiarlo? |
-| --- | --- | --- |
-| **Nombre** | El nombre que ven los demás en el sistema | ✅ Sí |
+| Campo                  | ¿Qué es?                                          | ¿Puedo cambiarlo?                   |
+| ---------------------- | ------------------------------------------------- | ----------------------------------- |
+| **Nombre**             | El nombre que ven los demás en el sistema         | ✅ Sí                               |
 | **Correo electrónico** | Tu dirección de email, se usa para iniciar sesión | ✅ Sí (puede requerir verificación) |
 
 ## ⚠️ Cosas a tener en cuenta

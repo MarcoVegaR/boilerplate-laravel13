@@ -1,5 +1,3 @@
-import type { ComponentType } from 'react';
-
 import {
     ArrowRight,
     BarChart3,
@@ -11,6 +9,7 @@ import {
     UserRoundSearch,
     Users,
 } from 'lucide-react';
+import type { ComponentType } from 'react';
 
 type SubjectUser = {
     id: number;
@@ -151,7 +150,11 @@ export function CopilotEmptyState({
 }: CopilotEmptyStateProps) {
     const prompts = subjectUser
         ? getUserPrompts(subjectUser, canExecuteCopilot)
-        : getGeneralPrompts({ canViewUsers, canAssignRoles, canExecuteCopilot });
+        : getGeneralPrompts({
+              canViewUsers,
+              canAssignRoles,
+              canExecuteCopilot,
+          });
 
     return (
         <div className="flex h-full flex-col items-center justify-center gap-6 px-5 py-10">
@@ -173,7 +176,7 @@ export function CopilotEmptyState({
 
             {prompts.length > 0 && (
                 <div className="w-full max-w-md space-y-3">
-                    <p className="text-center text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
+                    <p className="text-center text-xs font-medium tracking-wider text-muted-foreground/70 uppercase">
                         Prueba preguntar
                     </p>
                     <div className="grid grid-cols-2 gap-2">
@@ -181,7 +184,9 @@ export function CopilotEmptyState({
                             <PromptCard
                                 key={suggestion.label}
                                 suggestion={suggestion}
-                                onClick={() => onSelectPrompt(suggestion.prompt)}
+                                onClick={() =>
+                                    onSelectPrompt(suggestion.prompt)
+                                }
                             />
                         ))}
                     </div>

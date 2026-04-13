@@ -23,11 +23,11 @@ Los **roles** son como etiquetas que le dicen al sistema qué puede hacer cada p
 
 ## ✅ ¿Cómo saber si funcionó?
 
-| Señal | Significado |
-| --- | --- |
-| El rol aparece en el perfil del usuario ✅ | Se guardó correctamente |
+| Señal                                           | Significado                         |
+| ----------------------------------------------- | ----------------------------------- |
+| El rol aparece en el perfil del usuario ✅      | Se guardó correctamente             |
 | Los permisos que necesita están en su acceso ✅ | El rol tiene los permisos correctos |
-| No aparecen permisos que no debería tener ✅ | No se dio acceso de más |
+| No aparecen permisos que no debería tener ✅    | No se dio acceso de más             |
 
 > ⚠️ **Importante:** Si asignas un rol que no está activo, no tendrá ningún efecto. Verifica siempre que el rol esté en estado activo.
 

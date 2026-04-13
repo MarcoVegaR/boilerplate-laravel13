@@ -2,7 +2,10 @@ import { Head, Link, router } from '@inertiajs/react';
 import { BookOpenText, Footprints, Search, Sparkles } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
-import { index as helpIndex, show as helpShow } from '@/actions/App/Http/Controllers/HelpController';
+import {
+    index as helpIndex,
+    show as helpShow,
+} from '@/actions/App/Http/Controllers/HelpController';
 import { HelpCategoryCard } from '@/components/help/help-category-card';
 import { PageHeader } from '@/components/system/page-header';
 import { Badge } from '@/components/ui/badge';
@@ -10,8 +13,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
-import { helpCategoryIcon } from '@/lib/system';
 import AppLayout from '@/layouts/app-layout';
+import { helpCategoryIcon } from '@/lib/system';
 import type { HelpCategory, HelpIndexProps } from '@/types';
 
 function normalize(value: string): string {
@@ -96,7 +99,8 @@ export default function HelpIndex({
                                     ¿Primera vez en el sistema?
                                 </p>
                                 <p className="text-sm text-muted-foreground">
-                                    Revisa la guía de primeros pasos para verificar que tu cuenta esté lista.
+                                    Revisa la guía de primeros pasos para
+                                    verificar que tu cuenta esté lista.
                                 </p>
                             </div>
                             <Button asChild size="sm" variant="outline">

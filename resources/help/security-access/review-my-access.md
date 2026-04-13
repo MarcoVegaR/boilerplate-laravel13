@@ -11,10 +11,10 @@ order: 10
 
 Ve a **Configuración > Acceso** (desde el menú de tu usuario). Ahí encontrarás dos secciones:
 
-| Sección | ¿Qué muestra? | ¿Qué buscar? |
-| --- | --- | --- |
-| **Mis roles** | Los roles que tienes asignados | Que estén activos y sean los correctos |
-| **Permisos efectivos** | Todas las acciones que puedes realizar | Que aparezca el permiso que necesitas |
+| Sección                | ¿Qué muestra?                          | ¿Qué buscar?                           |
+| ---------------------- | -------------------------------------- | -------------------------------------- |
+| **Mis roles**          | Los roles que tienes asignados         | Que estén activos y sean los correctos |
+| **Permisos efectivos** | Todas las acciones que puedes realizar | Que aparezca el permiso que necesitas  |
 
 > 💡 **¿Qué son los "permisos efectivos"?** Son la suma de todos los permisos de tus roles activos. Si tienes dos roles y cada uno permite cosas distintas, los permisos efectivos muestran todo junto.
 

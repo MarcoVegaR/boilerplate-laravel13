@@ -25,13 +25,13 @@ A veces necesitas que una persona ya no pueda entrar al sistema, pero sin borrar
 
 ## ✅ ¿Qué pasa cuando desactivas una cuenta?
 
-| Aspecto | ¿Qué ocurre? |
-| --- | --- |
-| **Inicio de sesión** | ❌ La persona ya no puede entrar |
-| **Roles y permisos** | Se conservan tal cual |
-| **Historial de auditoría** | Se mantiene completo |
-| **Datos personales** | No se modifican |
-| **¿Se puede revertir?** | ✅ Sí, se puede reactivar en cualquier momento |
+| Aspecto                    | ¿Qué ocurre?                                   |
+| -------------------------- | ---------------------------------------------- |
+| **Inicio de sesión**       | ❌ La persona ya no puede entrar               |
+| **Roles y permisos**       | Se conservan tal cual                          |
+| **Historial de auditoría** | Se mantiene completo                           |
+| **Datos personales**       | No se modifican                                |
+| **¿Se puede revertir?**    | ✅ Sí, se puede reactivar en cualquier momento |
 
 ## ⚠️ Buenas prácticas
 

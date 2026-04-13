@@ -75,11 +75,18 @@ export function HelpArticleContent({
                     blockquote: ({ children }) => {
                         let text = '';
                         Children.forEach(children, (child) => {
-                            if (text) return;
+                            if (text) {
+                                return;
+                            }
+
                             if (isValidElement(child)) {
-                                const inner = (child.props as { children?: ReactNode }).children;
+                                const inner = (
+                                    child.props as { children?: ReactNode }
+                                ).children;
                                 text = String(
-                                    Array.isArray(inner) ? inner[0] ?? '' : inner ?? '',
+                                    Array.isArray(inner)
+                                        ? (inner[0] ?? '')
+                                        : (inner ?? ''),
                                 );
                             }
                         });

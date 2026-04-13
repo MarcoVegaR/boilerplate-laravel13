@@ -35,35 +35,35 @@ El Copiloto entiende diferentes tipos de consultas. Aquí tienes ejemplos concre
 
 ### Consultar información
 
-| Pregunta | ¿Qué hace? |
-| --- | --- |
-| "Resume el estado actual de María" | Muestra una tarjeta con estado, roles, permisos, 2FA y verificación de correo |
-| "¿Qué roles tiene juan@empresa.com?" | Lista los roles asignados y su estado (activo/inactivo) |
-| "¿Qué puede hacer este usuario?" | Muestra los permisos efectivos agrupados por módulo |
-| "¿Tiene habilitada la verificación en dos pasos?" | Indica si 2FA está configurado y confirmado |
+| Pregunta                                          | ¿Qué hace?                                                                    |
+| ------------------------------------------------- | ----------------------------------------------------------------------------- |
+| "Resume el estado actual de María"                | Muestra una tarjeta con estado, roles, permisos, 2FA y verificación de correo |
+| "¿Qué roles tiene juan@empresa.com?"              | Lista los roles asignados y su estado (activo/inactivo)                       |
+| "¿Qué puede hacer este usuario?"                  | Muestra los permisos efectivos agrupados por módulo                           |
+| "¿Tiene habilitada la verificación en dos pasos?" | Indica si 2FA está configurado y confirmado                                   |
 
 ### Buscar usuarios
 
-| Pregunta | ¿Qué hace? |
-| --- | --- |
-| "Busca usuarios inactivos" | Muestra una lista de usuarios con estado inactivo |
-| "¿Quiénes son administradores?" | Busca usuarios con rol de administrador |
-| "¿Quién puede crear roles?" | Identifica usuarios que tienen ese permiso específico |
+| Pregunta                        | ¿Qué hace?                                            |
+| ------------------------------- | ----------------------------------------------------- |
+| "Busca usuarios inactivos"      | Muestra una lista de usuarios con estado inactivo     |
+| "¿Quiénes son administradores?" | Busca usuarios con rol de administrador               |
+| "¿Quién puede crear roles?"     | Identifica usuarios que tienen ese permiso específico |
 
 ### Consultar métricas
 
-| Pregunta | ¿Qué hace? |
-| --- | --- |
+| Pregunta                          | ¿Qué hace?                                                   |
+| --------------------------------- | ------------------------------------------------------------ |
 | "¿Cuántos usuarios hay en total?" | Muestra el total con desglose por estado (activos/inactivos) |
-| "¿Cuáles roles existen?" | Lista todos los roles del sistema |
+| "¿Cuáles roles existen?"          | Lista todos los roles del sistema                            |
 
 ### Proponer acciones
 
-| Pregunta | ¿Qué hace? |
-| --- | --- |
-| "Desactiva esta cuenta" | Propone la desactivación y espera tu confirmación |
-| "Activa esta cuenta" | Propone la reactivación de una cuenta inactiva |
-| "Envía un correo de restablecimiento de contraseña" | Propone enviar el email de reset |
+| Pregunta                                                       | ¿Qué hace?                                            |
+| -------------------------------------------------------------- | ----------------------------------------------------- |
+| "Desactiva esta cuenta"                                        | Propone la desactivación y espera tu confirmación     |
+| "Activa esta cuenta"                                           | Propone la reactivación de una cuenta inactiva        |
+| "Envía un correo de restablecimiento de contraseña"            | Propone enviar el email de reset                      |
 | "Crea un usuario nuevo llamado Ana con correo ana@empresa.com" | Propone un alta guiada con los datos que proporcionas |
 
 ## ✅ ¿Cómo funcionan las acciones?
@@ -86,10 +86,10 @@ Si pides crear un usuario nuevo, el Copiloto:
 
 1. Te propone la acción con los datos que proporcionaste (nombre, correo, roles).
 2. Al confirmar, crea la cuenta y te muestra una **tarjeta de credenciales temporales** con:
-   - Nombre y correo del nuevo usuario.
-   - Una **contraseña temporal** que debes copiar y compartir por un canal seguro.
-   - Un botón para **copiar la contraseña** al portapapeles.
-   - Un botón para **ocultar la tarjeta** (la contraseña solo se muestra una vez).
+    - Nombre y correo del nuevo usuario.
+    - Una **contraseña temporal** que debes copiar y compartir por un canal seguro.
+    - Un botón para **copiar la contraseña** al portapapeles.
+    - Un botón para **ocultar la tarjeta** (la contraseña solo se muestra una vez).
 
 > ⚠️ **La contraseña temporal solo se muestra una vez.** Si cierras la tarjeta sin copiarla, necesitarás enviar un correo de restablecimiento desde el perfil del usuario.
 
@@ -106,18 +106,18 @@ También puedes escribir tu propia pregunta en el campo de texto. Usa **Ctrl + E
 
 El Copiloto tiene **dos niveles de acceso** que controlan lo que puedes hacer:
 
-| Permiso | ¿Qué te permite? |
-| --- | --- |
-| **Ver copiloto** (`system.users-copilot.view`) | Abrir el panel y hacer consultas de solo lectura (estados, métricas, búsquedas) |
+| Permiso                                                | ¿Qué te permite?                                                                 |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| **Ver copiloto** (`system.users-copilot.view`)         | Abrir el panel y hacer consultas de solo lectura (estados, métricas, búsquedas)  |
 | **Ejecutar acciones** (`system.users-copilot.execute`) | Confirmar acciones propuestas (activar, desactivar, crear usuario, enviar reset) |
 
 Además, cada acción requiere sus **permisos funcionales propios**:
 
-| Acción | Permisos necesarios además del copiloto |
-| --- | --- |
-| Activar / Desactivar usuario | Permiso de desactivación de usuarios |
-| Enviar restablecimiento de contraseña | Permiso de envío de reset |
-| Alta guiada (crear usuario) | Permiso de crear usuario + asignar roles |
+| Acción                                | Permisos necesarios además del copiloto  |
+| ------------------------------------- | ---------------------------------------- |
+| Activar / Desactivar usuario          | Permiso de desactivación de usuarios     |
+| Enviar restablecimiento de contraseña | Permiso de envío de reset                |
+| Alta guiada (crear usuario)           | Permiso de crear usuario + asignar roles |
 
 > 💡 Si el Copiloto te muestra una propuesta pero el botón está deshabilitado con la etiqueta "Solo propuesta", significa que te falta uno de estos permisos. Contacta a un administrador.
 
@@ -145,16 +145,16 @@ El Copiloto **recuerda el contexto** dentro de la misma sesión. Esto significa 
 
 El Copiloto responde con diferentes tipos de **tarjetas visuales** según lo que preguntes:
 
-| Tarjeta | ¿Cuándo aparece? | ¿Qué muestra? |
-| --- | --- | --- |
-| **Contexto de usuario** 👤 | Al pedir un resumen de alguien | Estado, correo, 2FA, roles y permisos efectivos |
-| **Resultados de búsqueda** 🔍 | Al buscar usuarios | Lista de usuarios con estado, roles y enlace a su perfil |
-| **Métricas** 📊 | Al preguntar "¿cuántos...?" | Valor principal con desglose (activos, inactivos, etc.) |
-| **Propuesta de acción** ⚡ | Al pedir una acción | Tipo de acción, resumen, usuario afectado y botón de confirmación |
-| **Aclaración** ❓ | Si la pregunta es ambigua | Te pide más detalles con opciones sugeridas |
-| **Aviso** ℹ️ | Información complementaria | Roles, permisos u otros datos relevantes |
-| **Resultado de acción** ✅ | Tras confirmar una acción | Confirmación de que la acción se ejecutó correctamente |
-| **Credenciales** 🔑 | Tras crear un usuario | Contraseña temporal para copiar y compartir |
+| Tarjeta                       | ¿Cuándo aparece?               | ¿Qué muestra?                                                     |
+| ----------------------------- | ------------------------------ | ----------------------------------------------------------------- |
+| **Contexto de usuario** 👤    | Al pedir un resumen de alguien | Estado, correo, 2FA, roles y permisos efectivos                   |
+| **Resultados de búsqueda** 🔍 | Al buscar usuarios             | Lista de usuarios con estado, roles y enlace a su perfil          |
+| **Métricas** 📊               | Al preguntar "¿cuántos...?"    | Valor principal con desglose (activos, inactivos, etc.)           |
+| **Propuesta de acción** ⚡    | Al pedir una acción            | Tipo de acción, resumen, usuario afectado y botón de confirmación |
+| **Aclaración** ❓             | Si la pregunta es ambigua      | Te pide más detalles con opciones sugeridas                       |
+| **Aviso** ℹ️                  | Información complementaria     | Roles, permisos u otros datos relevantes                          |
+| **Resultado de acción** ✅    | Tras confirmar una acción      | Confirmación de que la acción se ejecutó correctamente            |
+| **Credenciales** 🔑           | Tras crear un usuario          | Contraseña temporal para copiar y compartir                       |
 
 ## ⚠️ Limitaciones
 

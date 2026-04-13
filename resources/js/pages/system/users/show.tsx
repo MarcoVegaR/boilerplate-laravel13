@@ -321,10 +321,7 @@ export default function UserShow({ user, groupedEffectivePermissions }: Props) {
                                 </Button>
                             )}
 
-                            <HelpLink
-                                category="users"
-                                slug="user-lifecycle"
-                            />
+                            <HelpLink category="users" slug="user-lifecycle" />
 
                             <CopilotSheet
                                 subjectUser={{

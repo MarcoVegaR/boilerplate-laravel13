@@ -14,9 +14,11 @@ function parseBlocks(text: string): Block[] {
 
     function flushParagraph() {
         const trimmed = currentParagraph.trim();
+
         if (trimmed) {
             blocks.push({ type: 'paragraph', content: trimmed });
         }
+
         currentParagraph = '';
     }
 
@@ -42,16 +44,20 @@ function parseBlocks(text: string): Block[] {
 
         if (orderedMatch) {
             flushParagraph();
+
             if (currentListType === 'unordered') {
                 flushList();
             }
+
             currentListType = 'ordered';
             currentListItems.push(orderedMatch[2]);
         } else if (unorderedMatch) {
             flushParagraph();
+
             if (currentListType === 'ordered') {
                 flushList();
             }
+
             currentListType = 'unordered';
             currentListItems.push(unorderedMatch[1]);
         } else if (trimmedLine === '') {
@@ -79,6 +85,7 @@ function renderInline(text: string): ReactNode[] {
         if (match.index > lastIndex) {
             parts.push(text.slice(lastIndex, match.index));
         }
+
         parts.push(
             <strong key={match.index} className="font-semibold text-foreground">
                 {match[1]}
