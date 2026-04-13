@@ -29,17 +29,18 @@ import { Input } from '@/components/ui/input';
 import { LaravelPagination } from '@/components/ui/pagination';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useCan } from '@/hooks/use-can';
+import { HelpLink } from '@/components/help/help-link';
 import AppLayout from '@/layouts/app-layout';
 import type { BreadcrumbItem, PaginatedData } from '@/types';
 import type { {{ model }}Data } from '@/types/{{ module }}-{{ resource }}';
 
 type Props = {
-    {{ resource }}: PaginatedData<{{ model }}Data>;
+    {{ resourceVariable }}: PaginatedData<{{ model }}Data>;
     filters: { search?: string; sort?: string; direction?: string };
     breadcrumbs: BreadcrumbItem[];
 };
 
-export default function {{ resourceStudly }}Index({ {{ resource }}, filters, breadcrumbs }: Props) {
+export default function {{ resourceStudly }}Index({ {{ resourceVariable }}, filters, breadcrumbs }: Props) {
     const canCreate = useCan('{{ permissionPrefix }}.create');
     const canUpdate = useCan('{{ permissionPrefix }}.update');
     const canDelete = useCan('{{ permissionPrefix }}.delete');
@@ -101,7 +102,12 @@ export default function {{ resourceStudly }}Index({ {{ resource }}, filters, bre
                 <PageHeader
                     title="{{ resourcesHeadline }}"
                     description="Scaffold base listo para refinamiento del módulo."
-                    actions={{{ indexCreateAction }}}
+                    actions={
+                        <>
+                            <HelpLink category="{{ module }}" slug="{{ helpSlugIndex }}" />
+                            {{{ indexCreateAction }}}
+                        </>
+                    }
                 />
 
                 <Card className="gap-0 py-0">

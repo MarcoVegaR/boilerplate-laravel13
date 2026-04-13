@@ -43,9 +43,12 @@ it('verifies a writable scaffold after the documented manual integration steps',
     $routeFile = file_get_contents(base_path('routes/'.$module.'.php'));
     $typesFile = file_get_contents(base_path('resources/js/types/'.$module.'-'.$resource.'.ts'));
     $indexPage = file_get_contents(base_path('resources/js/pages/'.$module.'/'.$resource.'/index.tsx'));
+    $createPage = file_get_contents(base_path('resources/js/pages/'.$module.'/'.$resource.'/create.tsx'));
     $actionFile = base_path('resources/js/actions/App/Http/Controllers/'.Str::studly($module).'/'.$model.'Controller.ts');
-    $helpArticlePath = base_path('resources/help/'.$module.'/'.$resource.'.md');
-    $helpArticle = file_get_contents($helpArticlePath);
+    $helpArticleIndexPath = base_path('resources/help/'.$module.'/manage-'.$resource.'.md');
+    $helpArticleCreatePath = base_path('resources/help/'.$module.'/create-'.Str::singular($resource).'.md');
+    $helpArticleIndex = file_get_contents($helpArticleIndexPath);
+    $helpArticleCreate = file_get_contents($helpArticleCreatePath);
 
     expect($controller)->toContain("Gate::authorize('viewAny', {$model}::class)")
         ->and($controller)->toContain("return Inertia::render('{$module}/{$resource}/index'")
@@ -54,10 +57,17 @@ it('verifies a writable scaffold after the documented manual integration steps',
         ->and($indexPage)->toContain("import { create, destroy, edit, index, show } from '@/actions/App/Http/Controllers/".Str::studly($module)."/{$model}Controller';")
         ->and($indexPage)->toContain('<PageHeader')
         ->and($indexPage)->toContain('handleSort')
-        ->and(file_exists($helpArticlePath))->toBeTrue()
-        ->and($helpArticle)->toContain('title: Gestionar')
-        ->and($helpArticle)->toContain('category: '.Str::headline($module))
-        ->and($helpArticle)->toContain('## Checklist rápido')
+        ->and($indexPage)->toContain("import { HelpLink } from '@/components/help/help-link';")
+        ->and($indexPage)->toContain("<HelpLink category=\"{$module}\" slug=\"manage-{$resource}\" />")
+        ->and($createPage)->toContain("import { HelpLink } from '@/components/help/help-link';")
+        ->and($createPage)->toContain("<HelpLink category=\"{$module}\" slug=\"create-".Str::singular($resource)."\" />")
+        ->and(file_exists($helpArticleIndexPath))->toBeTrue()
+        ->and(file_exists($helpArticleCreatePath))->toBeTrue()
+        ->and($helpArticleIndex)->toContain('title: Gestionar')
+        ->and($helpArticleIndex)->toContain('category: '.Str::headline($module))
+        ->and($helpArticleIndex)->toContain('## Checklist rápido')
+        ->and($helpArticleCreate)->toContain('title: Crear')
+        ->and($helpArticleCreate)->toContain('## Pasos sugeridos')
         ->and(file_exists($actionFile))->toBeTrue()
         ->and(Route::has($module.'.'.$resource.'.index'))->toBeTrue()
         ->and(Route::has($module.'.'.$resource.'.store'))->toBeTrue()
@@ -91,10 +101,17 @@ it('verifies a read only scaffold after the documented manual integration steps'
 
     $actionFile = base_path('resources/js/actions/App/Http/Controllers/'.Str::studly($module).'/'.$model.'Controller.ts');
     $seederFile = file_get_contents(base_path('database/seeders/'.Str::studly($module).Str::studly(Str::singular($resource)).'PermissionsSeeder.php'));
+    $indexPage = file_get_contents(base_path('resources/js/pages/'.$module.'/'.$resource.'/index.tsx'));
+    $helpArticleIndexPath = base_path('resources/help/'.$module.'/manage-'.$resource.'.md');
+    $helpArticleCreatePath = base_path('resources/help/'.$module.'/create-'.Str::singular($resource).'.md');
 
     expect(file_exists(base_path('app/Http/Requests/'.Str::studly($module).'/'.Str::studly(Str::singular($resource)).'/Store'.$model.'Request.php')))->toBeFalse()
         ->and(file_exists(base_path('resources/js/pages/'.$module.'/'.$resource.'/create.tsx')))->toBeFalse()
         ->and(file_exists($actionFile))->toBeTrue()
+        ->and(file_exists($helpArticleIndexPath))->toBeTrue()
+        ->and(file_exists($helpArticleCreatePath))->toBeFalse()
+        ->and($indexPage)->toContain("import { HelpLink } from '@/components/help/help-link';")
+        ->and($indexPage)->toContain("<HelpLink category=\"{$module}\" slug=\"manage-{$resource}\" />")
         ->and(Route::has($module.'.'.$resource.'.index'))->toBeTrue()
         ->and(Route::has($module.'.'.$resource.'.show'))->toBeTrue()
         ->and(Route::has($module.'.'.$resource.'.store'))->toBeFalse()

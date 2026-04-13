@@ -22,7 +22,7 @@ final class ScaffoldStubRenderer
             new GeneratedFile($paths['permissions_seeder'], $this->renderStub('permissions-seeder.stub', $context)),
             new GeneratedFile($paths['index_page'], $this->renderStub('index-page.stub', $context)),
             new GeneratedFile($paths['show_page'], $this->renderStub('show-page.stub', $context)),
-            new GeneratedFile($paths['help_article'], $this->renderStub('help-article.stub', $context)),
+            new GeneratedFile($paths['help_article_index'], $this->renderStub('help-index.stub', $context)),
             new GeneratedFile($paths['types'], $this->renderStub('types.stub', $context)),
             new GeneratedFile($paths['index_test'], $this->renderStub('index-test.stub', $context)),
             new GeneratedFile($paths['delete_test'], $this->renderStub('delete-test.stub', $context)),
@@ -35,6 +35,7 @@ final class ScaffoldStubRenderer
             $files[] = new GeneratedFile($paths['create_page'], $this->renderStub('create-page.stub', $context));
             $files[] = new GeneratedFile($paths['edit_page'], $this->renderStub('edit-page.stub', $context));
             $files[] = new GeneratedFile($paths['form_component'], $this->renderStub('form-component.stub', $context));
+            $files[] = new GeneratedFile($paths['help_article_create'], $this->renderStub('help-create.stub', $context));
             $files[] = new GeneratedFile($paths['create_test'], $this->renderStub('create-test.stub', $context));
             $files[] = new GeneratedFile($paths['update_test'], $this->renderStub('update-test.stub', $context));
         }
@@ -122,6 +123,9 @@ final class ScaffoldStubRenderer
             '{{ showPageEditAction }}' => $this->showPageEditAction($context),
             '{{ recordDisplayPhp }}' => $this->recordDisplayPhp($context),
             '{{ recordDisplayTs }}' => $this->recordDisplayTs($context),
+            '{{ helpSlugIndex }}' => "manage-{$context->resource}",
+            '{{ helpSlugCreate }}' => 'create-'.Str::singular($context->resource),
+            '{{ resourceVariable }}' => Str::camel($context->resource),
         ];
     }
 

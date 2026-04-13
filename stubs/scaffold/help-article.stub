@@ -5,12 +5,6 @@ category: {{ moduleHeadline }}
 order: 10
 ---
 
-<!-- Convención: el directorio físico de este artículo usa el nombre del resource en kebab-case (ej. "inventory-items/").
-     Ese mismo valor es el `category` que debes pasar al componente HelpLink en las páginas del módulo:
-     <HelpLink category="{{ module }}/{{ resource }}" slug="{{ resource }}" />
-     El campo `category` del frontmatter es el label legible para el operador (ej. "Inventario").
-     Ambos valores son distintos por diseño: uno es la clave técnica de ruta, el otro es el texto visible. -->
-
 Describe aquí el propósito operativo de **{{ resourcesHeadline }}** y cuándo conviene consultar este artículo.
 
 ## Checklist rápido
