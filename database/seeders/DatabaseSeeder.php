@@ -18,10 +18,10 @@ class DatabaseSeeder extends Seeder
         $this->call(AuditModulePermissionsSeeder::class);
         $this->call(AiCopilotPermissionsSeeder::class);
 
-        $shouldSeedFixtures = in_array((string) config('app.env'), ['local', 'testing'], true)
+        $shouldSeedBootstrapAdmin = in_array((string) config('app.env'), ['local', 'testing'], true)
             || config('app.allow_production_test_seed');
 
-        if (! $shouldSeedFixtures) {
+        if (! $shouldSeedBootstrapAdmin) {
             return;
         }
 
@@ -35,6 +35,10 @@ class DatabaseSeeder extends Seeder
 
         // Assign super-admin role to local admin user (idempotent)
         $admin->assignRole('super-admin');
+
+        if (! in_array((string) config('app.env'), ['local', 'testing'], true)) {
+            return;
+        }
 
         // Test data seeders — separate from core seeders
         $this->call(TestRolesSeeder::class);
