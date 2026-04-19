@@ -32,7 +32,9 @@ jobs:
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          printf '%s' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          cat <<'EOF' > ~/.ssh/id_ed25519
+          ${{ secrets.DEPLOY_SSH_KEY }}
+          EOF
           chmod 600 ~/.ssh/id_ed25519
 
       - name: Trust deploy host
