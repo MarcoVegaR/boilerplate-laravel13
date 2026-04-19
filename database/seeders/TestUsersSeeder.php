@@ -40,6 +40,7 @@ class TestUsersSeeder extends Seeder
     public function run(): void
     {
         $rolesByName = Role::pluck('id', 'name');
+        $shouldGenerateFactoryFixtures = in_array((string) config('app.env'), ['local', 'testing'], true);
 
         // Create named users with specific role assignments
         foreach (self::NAMED_USERS as $data) {
@@ -65,7 +66,7 @@ class TestUsersSeeder extends Seeder
         $existingCount = User::count();
         $remaining = max(0, 50 - $existingCount);
 
-        if ($remaining > 0) {
+        if ($shouldGenerateFactoryFixtures && $remaining > 0) {
             $assignableRoles = Role::active()->where('name', '!=', 'super-admin')->get();
 
             User::factory()

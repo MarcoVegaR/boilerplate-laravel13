@@ -108,6 +108,7 @@ class TestRolesSeeder extends Seeder
     public function run(): void
     {
         $allPermissions = Permission::pluck('id', 'name');
+        $shouldGenerateFactoryFixtures = in_array((string) config('app.env'), ['local', 'testing'], true);
 
         // Create named roles with specific permission subsets
         foreach (self::NAMED_ROLES as $data) {
@@ -132,7 +133,7 @@ class TestRolesSeeder extends Seeder
         $existingCount = Role::count();
         $remaining = max(0, 50 - $existingCount);
 
-        if ($remaining > 0) {
+        if ($shouldGenerateFactoryFixtures && $remaining > 0) {
             $permissionPool = Permission::all();
 
             Role::factory()
