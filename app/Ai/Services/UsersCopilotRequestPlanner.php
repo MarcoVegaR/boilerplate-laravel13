@@ -2,11 +2,14 @@
 
 namespace App\Ai\Services;
 
+use App\Ai\Agents\System\CopilotIntentClassifierAgent;
 use App\Ai\Support\CopilotConversationSnapshot;
 use App\Ai\Support\UsersCopilotDomainLexicon;
 use App\Models\User;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Context;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class UsersCopilotRequestPlanner
@@ -27,8 +30,24 @@ class UsersCopilotRequestPlanner
     {
         $normalized = $this->normalizePrompt($prompt);
 
+        // Fase 1c: staleness gate. Si el prompt requiere contexto previo pero
+        // el snapshot esta stale, pedir confirmacion antes de continuar. Si
+        // esta expired, se trata como fresh (snapshot descartado).
+        $snapshot = $this->applyFreshnessGate($snapshot);
+
+        if ($denial = $this->matchSensitiveDenial($normalized)) {
+            return $denial;
+        }
+
+        // Fase 1c: gate global ANTES del matrix y ramas subsiguientes. Todos
+        // los caminos deicticos (continua/cuantos son/solo los/desactivalo)
+        // quedan gateados uniformemente.
+        if ($this->shouldRequireContinuationConfirmation($normalized, $snapshot)) {
+            return $this->continuationConfirmPlan($normalized, $snapshot);
+        }
+
         if ($this->looksLikeConversationContinuation($normalized)) {
-            return $this->helpPlan($normalized);
+            return $this->resolveContinuation($normalized, $snapshot);
         }
 
         if ($this->looksLikeInformationalPrompt($normalized)) {
@@ -47,12 +66,16 @@ class UsersCopilotRequestPlanner
             return $actionExplainPlan;
         }
 
-        if ($subjectUser === null
-            && ! $this->isCreateUserProposal($normalized)
+        // Resolve entity-driven plan once and cache result to avoid double DB queries
+        $entityPlan = null;
+        if ($subjectUser === null && ! $this->isCreateUserProposal($normalized)) {
+            $entityPlan = $this->resolveEntityDrivenPlan($normalized, $snapshot);
+        }
+
+        if ($entityPlan !== null
             && ! $this->looksLikeExplicitCollectionSearch($normalized)
             && ! $this->looksLikeActionExplanationPrompt($normalized)
-            && $this->looksLikeExplicitDetailPrompt($normalized)
-            && ($entityPlan = $this->resolveEntityDrivenPlan($normalized, $snapshot))) {
+            && $this->looksLikeExplicitDetailPrompt($normalized)) {
             return $entityPlan;
         }
 
@@ -76,11 +99,38 @@ class UsersCopilotRequestPlanner
             return $permissionSearchPlan;
         }
 
+        if ($this->looksLikeActionProposal($normalized) && $this->looksLikeBulkAction($normalized)) {
+            return $this->clarificationPlan(
+                normalized: $normalized,
+                reason: 'denied:unsupported_bulk',
+                question: 'No puedo ejecutar acciones masivas desde el copiloto. Indica un usuario especifico para continuar.',
+            );
+        }
+
         if ($this->looksLikeSearch($normalized)) {
             return $this->searchPlan($normalized);
         }
 
-        if ($subjectUser === null && ! $this->isCreateUserProposal($normalized) && ($entityPlan = $this->resolveEntityDrivenPlan($normalized, $snapshot))) {
+        // Si hay entityPlan pero el prompt parece una acción, procesar como acción
+        if ($entityPlan !== null && $this->looksLikeActionProposal($normalized)) {
+            $resolvedUserId = $entityPlan['resolved_entity']['id'] ?? null;
+            if ($resolvedUserId !== null) {
+                $resolvedUser = User::query()->find($resolvedUserId);
+                if ($resolvedUser instanceof User) {
+                    return $this->actionPlan($normalized, $resolvedUser);
+                }
+            }
+
+            // Si entityPlan no resolvió usuario pero el snapshot tiene un único resultado, usarlo
+            if ($resolvedUserId === null && $snapshot->singleResultUserId() !== null) {
+                $snapshotUser = User::query()->find($snapshot->singleResultUserId());
+                if ($snapshotUser instanceof User) {
+                    return $this->actionPlan($normalized, $snapshotUser);
+                }
+            }
+        }
+
+        if ($entityPlan !== null) {
             return $entityPlan;
         }
 
@@ -97,15 +147,315 @@ class UsersCopilotRequestPlanner
         }
 
         if ($this->looksLikeActionProposal($normalized)) {
-            return $this->actionPlan($normalized, $subjectUser);
+            $actionSubject = $subjectUser;
+            if (! $actionSubject instanceof User && $snapshot->singleResultUserId() !== null) {
+                $actionSubject = User::query()->find($snapshot->singleResultUserId());
+            }
+
+            return $this->actionPlan($normalized, $actionSubject);
         }
 
-        return $this->helpPlan($normalized);
+        // Fallback determinístico - antes de retornar, intentar rescate con LLM
+        $fallbackPlan = $this->helpPlan($normalized);
+
+        return $this->attemptLLMRescue($normalized, $fallbackPlan, $snapshot, $subjectUser);
+    }
+
+    /**
+     * Intenta rescatar un fallback usando el clasificador LLM.
+     * Solo se invoca si el clasificador está habilitado y la categoría es rescatable.
+     */
+    protected function attemptLLMRescue(string $normalized, array $fallbackPlan, CopilotConversationSnapshot $snapshot, ?User $subjectUser): array
+    {
+        // Verificar si el clasificador está habilitado
+        if (! config('ai-copilot.intent_classifier.enabled', false)) {
+            return $fallbackPlan;
+        }
+
+        // Solo rescatar categorías no_match y ambiguous_target
+        $fallbackCategory = $this->categorizeFallback(
+            $fallbackPlan['capability_key'],
+            $fallbackPlan['intent_family'],
+            $fallbackPlan['clarification_state']['reason'] ?? null,
+            $normalized
+        );
+
+        if (! in_array($fallbackCategory, ['no_match', 'ambiguous_target'], true)) {
+            return $fallbackPlan;
+        }
+
+        try {
+            $classification = $this->classifyWithLLM($normalized);
+
+            if ($this->validateLLMClassification($classification, $normalized, $subjectUser)) {
+                // Log de éxito del clasificador
+                $this->logLLMClassification($normalized, $classification, true, null);
+
+                // Construir plan desde la clasificación LLM
+                return $this->buildPlanFromLLMClassification($normalized, $classification, $snapshot, $subjectUser);
+            }
+
+            // Log de rechazo del clasificador
+            $this->logLLMClassification($normalized, $classification, false, 'validation_failed');
+        } catch (\Throwable $e) {
+            // Log de error del clasificador
+            Log::warning('copilot.planner.llm_classification_error', [
+                'error' => $e->getMessage(),
+                'prompt_normalized' => preg_replace('/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/', '[email]', $normalized) ?? $normalized,
+                'correlation_id' => Context::get('correlation_id'),
+            ]);
+        }
+
+        return $fallbackPlan;
+    }
+
+    /**
+     * Clasifica el prompt usando el agente LLM.
+     *
+     * @return array{intent_family: string, capability_key: string, filters: array<string, mixed>, confidence: float}
+     */
+    protected function classifyWithLLM(string $normalized): array
+    {
+        $agent = new CopilotIntentClassifierAgent;
+
+        $timeout = config('ai-copilot.intent_classifier.timeout', 5);
+
+        // Usar el SDK de Laravel AI con timeout
+        $response = $agent->timeout($timeout)->prompt($normalized);
+
+        $data = json_decode($response->text, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new \RuntimeException('Respuesta malformada del clasificador LLM');
+        }
+
+        return [
+            'intent_family' => $data['intent_family'] ?? 'help',
+            'capability_key' => $data['capability_key'] ?? 'users.help',
+            'filters' => $data['filters'] ?? [],
+            'confidence' => $data['confidence'] ?? 0.0,
+        ];
+    }
+
+    /**
+     * Valida la clasificación del LLM en cuatro pasos.
+     *
+     * Pasos:
+     * 1. Existencia: capability_key existe en catálogo
+     * 2. Consistencia: intent_family coincide con el del catálogo
+     * 3. Filters: claves son subset de required_filters, valores son del tipo correcto
+     * 4. Confianza: confidence >= threshold
+     */
+    protected function validateLLMClassification(array $classification, string $normalized, ?User $subjectUser = null): bool
+    {
+        $capabilityKey = $classification['capability_key'] ?? null;
+        $intentFamily = $classification['intent_family'] ?? null;
+        $filters = $classification['filters'] ?? null;
+        $confidence = $classification['confidence'] ?? null;
+
+        if (! is_string($capabilityKey) || trim($capabilityKey) === '') {
+            return false;
+        }
+
+        if (! is_string($intentFamily) || trim($intentFamily) === '') {
+            return false;
+        }
+
+        if (! is_array($filters) || ! is_numeric($confidence)) {
+            return false;
+        }
+
+        $confidence = (float) $confidence;
+
+        // Paso 1: Existencia
+        $definition = UsersCopilotCapabilityCatalog::find($capabilityKey);
+        if ($definition === null) {
+            return false;
+        }
+
+        // Paso 2: Consistencia
+        if ($definition['intent_family'] !== $intentFamily) {
+            return false;
+        }
+
+        // Paso 3: Validación de filters
+        $requiredFilters = $definition['required_filters'] ?? [];
+
+        // Verificar que todas las claves de filters estén en required_filters
+        foreach (array_keys($filters) as $filterKey) {
+            if (! is_string($filterKey)) {
+                return false;
+            }
+
+            if (! in_array($filterKey, $requiredFilters, true)) {
+                return false; // Filtro no reconocido
+            }
+
+            if (is_string($filters[$filterKey]) && trim($filters[$filterKey]) === '') {
+                return false;
+            }
+
+            // Validar el tipo del valor
+            if (! UsersCopilotCapabilityCatalog::isValidFilterValue($filterKey, $filters[$filterKey])) {
+                return false;
+            }
+        }
+
+        // Paso 4: Confianza
+        $threshold = config('ai-copilot.intent_classifier.confidence_threshold', 0.7);
+        if ($confidence < $threshold) {
+            return false;
+        }
+
+        if (! $this->llmClassificationHasRequiredCriteria($definition, $filters, $subjectUser)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Construye un plan desde una clasificación LLM validada.
+     */
+    protected function buildPlanFromLLMClassification(string $normalized, array $classification, CopilotConversationSnapshot $snapshot, ?User $subjectUser): array
+    {
+        $capabilityKey = $classification['capability_key'];
+        $intentFamily = $classification['intent_family'];
+        $filters = $classification['filters'];
+        $resolvedEntity = $this->resolveLLMClassificationSubject($subjectUser, $filters);
+
+        // Marcar como procedente de LLM
+        $plan = [
+            'request_normalization' => $normalized,
+            'intent_family' => $intentFamily,
+            'capability_key' => $capabilityKey,
+            'filters' => array_merge($this->emptyFilters(), $filters),
+            'resolved_entity' => $resolvedEntity,
+            'missing_slots' => [],
+            'clarification_state' => null,
+            'proposal_vs_execute' => 'none',
+            'classification_source' => 'llm_fallback',
+        ];
+
+        // Determinar proposal_vs_execute según la familia
+        $definition = UsersCopilotCapabilityCatalog::find($capabilityKey);
+        if ($definition !== null) {
+            $plan['proposal_vs_execute'] = match ($definition['family']) {
+                'aggregate', 'list', 'detail', 'explain' => 'execute',
+                'action' => 'proposal',
+                default => 'none',
+            };
+        }
+
+        return $plan;
+    }
+
+    /**
+     * @param  array<string, mixed>  $definition
+     * @param  array<string, mixed>  $filters
+     */
+    protected function llmClassificationHasRequiredCriteria(array $definition, array $filters, ?User $subjectUser): bool
+    {
+        $capabilityKey = (string) ($definition['key'] ?? '');
+
+        if (in_array($capabilityKey, ['users.search', 'users.mixed.metrics_search'], true)) {
+            return $this->hasEffectiveSearchCriteria([
+                ...$this->emptyFilters(),
+                ...$filters,
+            ]);
+        }
+
+        if (($definition['requires_entity'] ?? false) === true
+            && ! $subjectUser instanceof User
+            && ! $this->llmFiltersContainUserId($filters)) {
+            return false;
+        }
+
+        return match ($capabilityKey) {
+            'users.explain.permission' => is_string($filters['permission'] ?? null)
+                && trim($filters['permission']) !== '',
+            'users.explain.action' => $this->llmFiltersContainUserId($filters)
+                && $this->llmFiltersContainTargetUserId($filters)
+                && is_string($filters['action_type'] ?? null)
+                && trim($filters['action_type']) !== '',
+            default => true,
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array<string, mixed>|null
+     */
+    protected function resolveLLMClassificationSubject(?User $subjectUser, array $filters): ?array
+    {
+        if ($subjectUser instanceof User) {
+            return [
+                'type' => 'user',
+                'id' => $subjectUser->id,
+                'label' => $subjectUser->name,
+            ];
+        }
+
+        if (! $this->llmFiltersContainUserId($filters)) {
+            return null;
+        }
+
+        $user = User::query()->find((int) $filters['user_id']);
+
+        if (! $user instanceof User) {
+            return null;
+        }
+
+        return [
+            'type' => 'user',
+            'id' => $user->id,
+            'label' => $user->name,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    protected function llmFiltersContainUserId(array $filters): bool
+    {
+        $userId = $filters['user_id'] ?? null;
+
+        return is_int($userId) || (is_string($userId) && ctype_digit($userId));
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    protected function llmFiltersContainTargetUserId(array $filters): bool
+    {
+        $targetUserId = $filters['target_user_id'] ?? null;
+
+        return is_int($targetUserId) || (is_string($targetUserId) && ctype_digit($targetUserId));
+    }
+
+    /**
+     * Registra log de clasificación LLM.
+     */
+    protected function logLLMClassification(string $normalized, array $classification, bool $accepted, ?string $rejectReason): void
+    {
+        $sanitized = preg_replace('/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/', '[email]', $normalized) ?? $normalized;
+
+        Log::info('copilot.planner.llm_classification', [
+            'prompt_normalized' => $sanitized,
+            'llm_intent_family' => $classification['intent_family'],
+            'llm_capability_key' => $classification['capability_key'],
+            'llm_confidence' => $classification['confidence'],
+            'accepted' => $accepted,
+            'reject_reason' => $rejectReason,
+            'correlation_id' => Context::get('correlation_id'),
+        ]);
     }
 
     protected function normalizePrompt(string $prompt): string
     {
-        return UsersCopilotDomainLexicon::normalize($prompt);
+        $normalized = UsersCopilotDomainLexicon::normalize($prompt);
+
+        return UsersCopilotDomainLexicon::correctTypos($normalized);
     }
 
     /**
@@ -198,6 +548,26 @@ class UsersCopilotRequestPlanner
             static fn (mixed $option): bool => is_array($option),
         ));
 
+        // Si el usuario está RECHAZANDO, devolver null para permitir nueva búsqueda
+        if ($this->looksLikeRejection($normalized)) {
+            return null; // El usuario rechazó la sugerencia, permitir nuevo intento
+        }
+
+        // Si hay options y el usuario está confirmando, seleccionar la primera sugerencia
+        if (count($options) === 1 && $this->looksLikeConfirmation($normalized)) {
+            return $this->planFromClarificationOption($normalized, $options[0]);
+        }
+
+        // Si hay múltiples options y el usuario confirma sin especificar, pedir clarificación
+        if (count($options) > 1 && $this->looksLikeConfirmation($normalized)) {
+            return $this->clarificationPlanWithOptions(
+                normalized: $normalized,
+                reason: 'ambiguous_target',
+                question: 'Hay varias opciones posibles. Por favor, indica específicamente cuál deseas seleccionar usando el número o el nombre completo.',
+                options: $options, // PRESERVAR opciones para siguiente interacción
+            );
+        }
+
         if ($options === []) {
             return $this->clarificationPlan(
                 normalized: $normalized,
@@ -233,6 +603,61 @@ class UsersCopilotRequestPlanner
     protected function looksLikeNewIntent(string $normalized): bool
     {
         return preg_match('/\b(busca|buscar|lista|listar|muestra|mostrar|explica|como\s+puedo|cuantos|dame|encuentra|crear|crea)\b/u', $normalized) === 1;
+    }
+
+    /**
+     * Detecta si el usuario está RECHAZANDO una sugerencia anterior.
+     * Frases como: "no", "no ese", "incorrecto", "ese no", "no es", etc.
+     * Importante: verificar ANTES que looksLikeConfirmation para evitar falsos positivos.
+     */
+    protected function looksLikeRejection(string $normalized): bool
+    {
+        // Patrones de negación fuerte al inicio
+        if (preg_match('/^\s*no\b/u', $normalized) === 1) {
+            return true;
+        }
+
+        // Patrones de rechazo explícito
+        $rejectionPatterns = [
+            '/\bno\s+(ese|esa|esos|esas|el|la|los|las)\b/u',           // "no ese", "no el"
+            '/\b(ese|esa|esos|esas)\s+no\b/u',                         // "ese no", "esa no"
+            '/\bno\s+es\b/u',                                          // "no es"
+            '/\bincorrecto\b/u',                                      // "incorrecto"
+            '/\bno\s+(quiero|ese|correcto|valido)\b/u',               // "no quiero", "no correcto"
+            '/\botro\b/u',                                              // "otro"
+            '/\bdiferente\b/u',                                        // "diferente"
+        ];
+
+        foreach ($rejectionPatterns as $pattern) {
+            if (preg_match($pattern, $normalized) === 1) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Detecta si el usuario está confirmando una sugerencia anterior.
+     * Frases como: "sí", "ese", "el que dices", "correcto", "así es", etc.
+     */
+    protected function looksLikeConfirmation(string $normalized): bool
+    {
+        $confirmationPatterns = [
+            '/\b(si|sí|yes|correcto|exacto|as[ií]\s+es|claro|por\s+supuesto)\b/u',
+            '/\b(ese|esa|el\s+que\s+dices?|la\s+que\s+dices?|el\s+que\s+indicas?|el\s+primero|la\s+primera)\b/u',
+            '/\b(el\s+que\s+me\s+indicas?|la\s+que\s+me\s+indicas?|el\s+sugerido|la\s+sugerida)\b/u',
+            '/\b(me\s+refiero\s+a|quise\s+decir|quer[ií]a\s+decir|me\s+refer[ií]a)\b/u',
+            '/\b(el\s+que|la\s+que|a\s+ese|a\s+esa)\s+(dijiste|mencionaste|sugeriste)\b/u',
+        ];
+
+        foreach ($confirmationPatterns as $pattern) {
+            if (preg_match($pattern, $normalized) === 1) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -412,6 +837,83 @@ class UsersCopilotRequestPlanner
 
         $matches = $this->candidateUsersFor($query);
 
+        // Si se proporcionó email pero no se encontró, dar mensaje específico con sugerencias
+        $email = $this->extractEmailFromText($normalized);
+        if ($email !== null && $matches->isEmpty()) {
+            $similarEmails = $this->findSimilarEmails($email);
+            $suggestion = '';
+            $options = [];
+
+            if (! empty($similarEmails)) {
+                $suggestedEmail = $similarEmails[0]['email'];
+                $suggestion = " ¿Quizás quisiste decir '{$suggestedEmail}'?";
+                // Crear opción estructurada para el usuario sugerido
+                foreach ($similarEmails as $similar) {
+                    $user = User::query()->find($similar['user_id']);
+                    if ($user instanceof User) {
+                        $options[] = [
+                            'label' => sprintf('%s <%s>', $user->name, $user->email),
+                            'value' => 'user:'.$user->id,
+                            'capability_key' => 'users.detail',
+                            'intent_family' => 'read_detail',
+                            'resolved_entity' => [
+                                'type' => 'user',
+                                'id' => $user->id,
+                                'label' => $user->name,
+                            ],
+                        ];
+                    }
+                }
+            }
+
+            return $this->clarificationPlanWithOptions(
+                normalized: $normalized,
+                reason: 'missing_entity',
+                question: "No encontré ningún usuario con el correo '{$email}'.{$suggestion} ¿Está correcto el email o quieres buscar por nombre?",
+                options: $options,
+                missingSlots: ['user_id'],
+            );
+        }
+
+        // Si no se encontró por nombre (y no era email), dar sugerencias de nombres similares
+        if ($email === null && $matches->isEmpty()) {
+            $similarNames = $this->findSimilarNames($query);
+            $suggestion = '';
+            $options = [];
+
+            if (! empty($similarNames)) {
+                $suggestions = [];
+                foreach ($similarNames as $similar) {
+                    $suggestions[] = $similar['name'];
+                    // Crear opción estructurada para cada nombre similar
+                    $user = User::query()->find($similar['user_id']);
+                    if ($user instanceof User) {
+                        $options[] = [
+                            'label' => sprintf('%s <%s>', $user->name, $user->email),
+                            'value' => 'user:'.$user->id,
+                            'capability_key' => 'users.detail',
+                            'intent_family' => 'read_detail',
+                            'resolved_entity' => [
+                                'type' => 'user',
+                                'id' => $user->id,
+                                'label' => $user->name,
+                            ],
+                        ];
+                    }
+                }
+                $suggestionText = implode(', ', $suggestions);
+                $suggestion = " ¿Quizás quisiste decir: {$suggestionText}?";
+            }
+
+            return $this->clarificationPlanWithOptions(
+                normalized: $normalized,
+                reason: 'missing_target',
+                question: "No pude identificar un usuario único con esa referencia.{$suggestion} Indica el nombre completo o el correo.",
+                options: $options,
+                missingSlots: ['user_id'],
+            );
+        }
+
         if ($matches->count() > 1) {
             return $this->ambiguousUserClarificationPlan(
                 $normalized,
@@ -425,6 +927,31 @@ class UsersCopilotRequestPlanner
 
             if ($this->looksLikeActionProposal($normalized)) {
                 return $this->actionPlan($normalized, $match);
+            }
+
+            if ($this->shouldConfirmLowConfidenceDetailMatch($query, $match)) {
+                return $this->clarificationPlanWithOptions(
+                    normalized: $normalized,
+                    reason: 'low_confidence_match',
+                    question: sprintf(
+                        "Encontre una coincidencia probable con '%s'. Confirma si te refieres a %s <%s>.",
+                        $query,
+                        $match->name,
+                        $match->email,
+                    ),
+                    options: [[
+                        'label' => sprintf('%s <%s>', $match->name, $match->email),
+                        'value' => 'user:'.$match->id,
+                        'capability_key' => 'users.detail',
+                        'intent_family' => 'read_detail',
+                        'resolved_entity' => [
+                            'type' => 'user',
+                            'id' => $match->id,
+                            'label' => $match->name,
+                        ],
+                    ]],
+                    missingSlots: ['user_id'],
+                );
             }
 
             if ($this->looksLikeCapabilitiesSummaryPrompt($normalized)) {
@@ -728,6 +1255,8 @@ class UsersCopilotRequestPlanner
             || preg_match('/\busuarios\s+con\s+(rol|perfil)\b/u', $normalized) === 1
             || preg_match('/\badministradores\s+del\s+sistema\b/u', $normalized) === 1
             || preg_match('/\busuarios\s+(con|sin)\s+dos\s+factores\b/u', $normalized) === 1
+            // Preguntas existenciales: "hay algún juan", "existe un usuario", "tienen alguno"
+            || preg_match('/\b(hay|existe|tienen?)\s+(algun|alguna|alguno|algunos|algunas|un|una|el|la|los|las)\b/u', $normalized) === 1
             || str_contains($normalized, 'usuarios no verificados')
             || str_contains($normalized, 'usuarios sin roles')
             || str_contains($normalized, 'usuarios inactivos');
@@ -799,6 +1328,10 @@ class UsersCopilotRequestPlanner
 
         $filters['query'] ??= $this->extractSearchQuery($normalized);
 
+        if ($searchCriteriaClarification = $this->searchCriteriaClarification($normalized, $filters)) {
+            return $searchCriteriaClarification;
+        }
+
         return [
             'request_normalization' => $normalized,
             'intent_family' => 'read_search',
@@ -828,6 +1361,7 @@ class UsersCopilotRequestPlanner
             '/\b(?:busca|buscar|encuentra|encontrar|muestra|mostrar|lista|listar|listame|dame)\s+(?:al\s+)?usuario\s+(.+?)(?:\s*$)/u',
             '/\b(?:busca|buscar|encuentra|encontrar)\s+a\s+(.+?)(?:\s*$)/u',
             '/\b(?:con\s+nombre)\s+(.+?)(?:\s*$)/u',
+            '/\b(?:hay|existe|tienen?)\s+(?:algun|alguna|alguno|algunos|algunas|un|una)\s+(.+?)(?:\s*$)/u',
         ];
 
         foreach ($patterns as $pattern) {
@@ -836,6 +1370,35 @@ class UsersCopilotRequestPlanner
 
                 return $query !== '' ? $query : null;
             }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array{query: ?string, status: 'active'|'inactive'|'all'|null, role: ?string, access_profile: ?string, permission: ?string, email_verified: ?bool, two_factor_enabled: ?bool, has_roles: ?bool}  $filters
+     * @return array<string, mixed>|null
+     */
+    protected function searchCriteriaClarification(string $normalized, array $filters): ?array
+    {
+        if (! $this->hasEffectiveSearchCriteria($filters)) {
+            return $this->clarificationPlan(
+                normalized: $normalized,
+                reason: 'insufficient_search_criteria',
+                question: 'Necesito al menos un criterio para buscar: nombre, correo, estado, rol u otro filtro especifico.',
+            );
+        }
+
+        if ($this->hasStructuredSearchCriteria($filters)) {
+            return null;
+        }
+
+        if (! $this->isTypedSearchQuery($filters['query'])) {
+            return $this->clarificationPlan(
+                normalized: $normalized,
+                reason: 'insufficient_search_criteria',
+                question: 'Necesito un criterio de busqueda mas concreto. Indica un nombre, correo o filtro especifico para continuar.',
+            );
         }
 
         return null;
@@ -923,6 +1486,14 @@ class UsersCopilotRequestPlanner
             default => null,
         };
 
+        if ($capabilityKey !== null && $capabilityKey !== 'users.actions.create_user' && $this->looksLikeBulkAction($normalized)) {
+            return $this->clarificationPlan(
+                normalized: $normalized,
+                reason: 'denied:unsupported_bulk',
+                question: 'No puedo ejecutar acciones masivas desde el copiloto. Indica un usuario especifico para continuar.',
+            );
+        }
+
         if ($capabilityKey === 'users.actions.create_user') {
             return [
                 'request_normalization' => $normalized,
@@ -975,6 +1546,8 @@ class UsersCopilotRequestPlanner
      */
     protected function clarificationPlan(string $normalized, string $reason, string $question, array $missingSlots = []): array
     {
+        $this->logFallback($normalized, 'users.clarification', 'ambiguous', $reason);
+
         return [
             'request_normalization' => $normalized,
             'intent_family' => 'ambiguous',
@@ -992,10 +1565,37 @@ class UsersCopilotRequestPlanner
     }
 
     /**
+     * @param  list<array<string, mixed>>  $options
+     * @param  list<string>  $missingSlots
+     * @return array<string, mixed>
+     */
+    protected function clarificationPlanWithOptions(string $normalized, string $reason, string $question, array $options, array $missingSlots = []): array
+    {
+        $this->logFallback($normalized, 'users.clarification', 'ambiguous', $reason);
+
+        return [
+            'request_normalization' => $normalized,
+            'intent_family' => 'ambiguous',
+            'capability_key' => 'users.clarification',
+            'filters' => $this->emptyFilters(),
+            'resolved_entity' => null,
+            'missing_slots' => $missingSlots,
+            'clarification_state' => [
+                'reason' => $reason,
+                'question' => $question,
+                'options' => $options,
+            ],
+            'proposal_vs_execute' => 'none',
+        ];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     protected function helpPlan(string $normalized): array
     {
+        $this->logFallback($normalized, 'users.help', 'help', null);
+
         return [
             'request_normalization' => $normalized,
             'intent_family' => 'help',
@@ -1006,6 +1606,89 @@ class UsersCopilotRequestPlanner
             'clarification_state' => null,
             'proposal_vs_execute' => 'none',
         ];
+    }
+
+    /**
+     * Registra un log de fallback para observabilidad.
+     */
+    protected function logFallback(string $normalized, string $capabilityKey, string $intentFamily, ?string $clarificationReason): void
+    {
+        // Sanitizar: reemplazar emails por [email]
+        $sanitized = preg_replace('/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/', '[email]', $normalized) ?? $normalized;
+
+        $fallbackCategory = $this->categorizeFallback($capabilityKey, $intentFamily, $clarificationReason, $normalized);
+
+        Log::info('copilot.planner.fallback', [
+            'capability_key' => $capabilityKey,
+            'intent_family' => $intentFamily,
+            'prompt_normalized' => $sanitized,
+            'fallback_category' => $fallbackCategory,
+            'clarification_reason' => $clarificationReason,
+            'correlation_id' => Context::get('correlation_id'),
+        ]);
+    }
+
+    /**
+     * Categoriza el fallback según la razón del no-match.
+     *
+     * Categorías:
+     * - denied: solicitud denegada explícitamente (sensible, impersonación, operación no soportada, bulk)
+     * - no_match: ningún resolver reconoció el prompt
+     * - ambiguous_target: se identificó intención pero no el usuario objetivo
+     * - missing_entity: se requiere usuario específico pero no se proporcionó
+     * - missing_context: se perdió contexto conversacional
+     * - insufficient_criteria: búsqueda sin criterio efectivo
+     * - informational: prompt informativo/educativo (resultado correcto, no es fallo)
+     */
+    protected function categorizeFallback(string $capabilityKey, string $intentFamily, ?string $clarificationReason, string $normalized): string
+    {
+        // denied: solicitudes denegadas explícitamente por el denial gate
+        if (is_string($clarificationReason) && str_starts_with($clarificationReason, 'denied:')) {
+            return 'denied';
+        }
+
+        // insufficient_criteria: búsqueda sin filtros efectivos
+        if ($clarificationReason === 'insufficient_search_criteria') {
+            return 'insufficient_criteria';
+        }
+
+        // informational: help plan que es resultado correcto
+        if ($capabilityKey === 'users.help' && $this->isInformationalPrompt($normalized)) {
+            return 'informational';
+        }
+
+        // Categorías basadas en clarification reason
+        if ($clarificationReason !== null) {
+            return match ($clarificationReason) {
+                'ambiguous_target' => 'ambiguous_target',
+                'missing_target' => 'missing_entity',
+                'missing_context' => 'missing_context',
+                default => 'no_match',
+            };
+        }
+
+        // Default para help sin categoría específica
+        return 'no_match';
+    }
+
+    /**
+     * Determina si un prompt es informativo/educativo (no requiere acción).
+     */
+    protected function isInformationalPrompt(string $normalized): bool
+    {
+        $informationalPatterns = [
+            '/\b(como|que|cuales|ayuda|info|informacion|explica|explicame)\b/u',
+            '/\b(funciona|sirve|uso|usar|hago|puedo|puedes)\b/u',
+            '/\b(capacidad|capacidades|habilidad|ayuda)\b/u',
+        ];
+
+        foreach ($informationalPatterns as $pattern) {
+            if (preg_match($pattern, $normalized) === 1) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -1051,9 +1734,265 @@ class UsersCopilotRequestPlanner
         return $snapshot->hasContext();
     }
 
+    /**
+     * Fase 1c: aplica la semantica de freshness tri-valuada sobre el snapshot
+     * antes de planear. En `expired` se descarta el snapshot (se trata como
+     * fresh sin contexto); en `stale` se preserva para que el planner decida
+     * si pedir confirmacion; en `fresh` se usa directamente.
+     */
+    protected function applyFreshnessGate(CopilotConversationSnapshot $snapshot): CopilotConversationSnapshot
+    {
+        if (! (bool) config('ai-copilot.contracts.staleness_confirmation', false)) {
+            return $snapshot;
+        }
+
+        if ($snapshot->freshness() === CopilotConversationSnapshot::FRESHNESS_EXPIRED) {
+            return CopilotConversationSnapshot::empty();
+        }
+
+        return $snapshot;
+    }
+
+    /**
+     * Fase 1c: decide si el prompt actual depende de contexto previo y el
+     * snapshot esta stale. En ese caso se emite un plan `continuation.confirm`
+     * para pedir confirmacion antes de reusar el contexto.
+     */
+    protected function shouldRequireContinuationConfirmation(string $normalized, CopilotConversationSnapshot $snapshot): bool
+    {
+        if (! (bool) config('ai-copilot.contracts.staleness_confirmation', false)) {
+            return false;
+        }
+
+        if (! $snapshot->hasContext()) {
+            return false;
+        }
+
+        if ($snapshot->freshness() !== CopilotConversationSnapshot::FRESHNESS_STALE) {
+            return false;
+        }
+
+        return $this->looksLikeConversationContinuation($normalized)
+            || $this->looksLikeCountFollowUp($normalized)
+            || $this->looksLikeSubsetRefinement($normalized)
+            || $this->looksLikeEntityReference($normalized);
+    }
+
+    /**
+     * Fase 1c: plan canonico que produce una respuesta `continuation_confirm`.
+     *
+     * @return array<string, mixed>
+     */
+    protected function continuationConfirmPlan(string $normalized, CopilotConversationSnapshot $snapshot): array
+    {
+        $entity = $snapshot->resolvedEntity();
+        $entityLabel = null;
+
+        if ($entity !== null) {
+            $user = User::query()->find($entity['id']);
+            $entityLabel = $user?->name;
+        }
+
+        $minutesElapsed = $snapshot->minutesSinceLastTurn();
+        $question = $entityLabel !== null
+            ? sprintf('Tu ultima interaccion sobre %s fue hace unos minutos. Deseas continuar con ese contexto o empezar de nuevo?', $entityLabel)
+            : 'Tu ultima interaccion tiene tiempo. Deseas continuar con el contexto previo o empezar de nuevo?';
+
+        return [
+            'request_normalization' => $normalized,
+            'intent_family' => 'continuation_confirm',
+            'capability_key' => 'users.continuation.confirm',
+            'filters' => $this->emptyFilters(),
+            'resolved_entity' => $entity,
+            'missing_slots' => [],
+            'clarification_state' => [
+                'reason' => 'snapshot_stale',
+                'freshness' => $snapshot->freshness(),
+                'question' => $question,
+                'entity_label' => $entityLabel,
+                'minutes_elapsed' => $minutesElapsed,
+                'options' => [
+                    ['label' => 'Continuar con el contexto previo', 'value' => 'confirm_continuation'],
+                    ['label' => 'Empezar de nuevo', 'value' => 'start_fresh'],
+                ],
+            ],
+            'proposal_vs_execute' => 'none',
+        ];
+    }
+
+    /**
+     * Denial gate: detects and blocks requests for sensitive data, impersonation, or unsupported operations.
+     * Evaluated with explicit precedence: impersonation > sensitive_data > unsupported_operation.
+     *
+     * @return array<string, mixed>|null
+     */
+    protected function matchSensitiveDenial(string $normalized): ?array
+    {
+        // Exclude informational/educational contexts — "como funciona el 2fa", "como cambiar el email"
+        if (preg_match('/\b(como\s+funciona|que\s+es|que\s+significa|como\s+se\s+configura|como\s+se\s+activa|como\s+habilitar|como\s+cambiar)\b/u', $normalized) === 1) {
+            return null;
+        }
+
+        // 1. Impersonation (highest precedence)
+        if (preg_match('/\b(entra|entrar|logueate|loguear|iniciar?\s+sesion|accede|acceder)\s+(como|de|por)\b/u', $normalized) === 1) {
+            return $this->clarificationPlan(
+                normalized: $normalized,
+                reason: 'denied:impersonation',
+                question: 'No puedo iniciar sesion como otro usuario ni acceder a cuentas ajenas.',
+            );
+        }
+
+        // 2. Sensitive data — requires exposure indicator + sensitive term co-occurrence
+        $sensitiveTerms = '/\b(contrasena|password|clave\s+de\s+acceso|token|2fa|otp|secret|recovery\s+code|codigo\s+de\s+recuperacion|api\s+key|bearer|credencial)\b/u';
+        $exposureIndicators = '/\b(dame|dime|muestra|mostrar|revela|revelar|cual\s+es|obtener|ver\s+la|ver\s+el|enviame|pasame|borrale\s+la|quitale\s+la|cambia\s+la)\b/u';
+
+        if (preg_match($sensitiveTerms, $normalized) === 1 && preg_match($exposureIndicators, $normalized) === 1) {
+            return $this->clarificationPlan(
+                normalized: $normalized,
+                reason: 'denied:sensitive_data',
+                question: 'No puedo mostrar contrasenas, tokens ni datos de autenticacion. Si necesitas restablecer el acceso de un usuario, puedo proponer un restablecimiento de contrasena.',
+            );
+        }
+
+        // 3. Unsupported operations
+        if (preg_match('/\b(eliminar?|borrar?|destruir?)\s+(definitivamente?\s+)?(al?\s+)?(usuario|cuenta|perfil)\b/u', $normalized) === 1
+            || preg_match('/\bexportar?\s+(a\s+)?(csv|excel|pdf|archivo|todos)\b/u', $normalized) === 1) {
+            return $this->clarificationPlan(
+                normalized: $normalized,
+                reason: 'denied:unsupported_operation',
+                question: 'Esa operacion no esta disponible desde el copiloto. Puedo ayudarte a consultar, buscar usuarios o proponer acciones como activar, desactivar o restablecer contrasena.',
+            );
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolves conversation continuation prompts using snapshot context instead of falling to helpPlan.
+     *
+     * @return array<string, mixed>
+     */
+    protected function resolveContinuation(string $normalized, CopilotConversationSnapshot $snapshot): array
+    {
+        if (! $snapshot->hasContext()) {
+            return $this->clarificationPlan(
+                normalized: $normalized,
+                reason: 'missing_context',
+                question: 'No tengo un resultado previo sobre el cual continuar. Indica que necesitas.',
+            );
+        }
+
+        $followUp = $this->resolveFollowUp($normalized, $snapshot);
+
+        if ($followUp !== null) {
+            return $followUp;
+        }
+
+        $entity = $snapshot->resolvedEntity();
+
+        if ($entity !== null && ($entity['type'] ?? null) === 'user') {
+            $user = User::query()->find($entity['id']);
+
+            if ($user instanceof User) {
+                return $this->detailPlan($normalized, $user);
+            }
+        }
+
+        $singleUserId = $snapshot->singleResultUserId();
+
+        if ($singleUserId !== null) {
+            $user = User::query()->find($singleUserId);
+
+            if ($user instanceof User) {
+                return $this->detailPlan($normalized, $user);
+            }
+        }
+
+        return $this->clarificationPlan(
+            normalized: $normalized,
+            reason: 'missing_context',
+            question: 'No logre determinar como continuar. Puedes ser mas especifico?',
+        );
+    }
+
+    protected function looksLikeBulkAction(string $normalized): bool
+    {
+        return preg_match('/\b(a\s+todos|todos\s+los|masivamente|en\s+lote|de\s+una\s+vez|a\s+cada\s+uno)\b/u', $normalized) === 1;
+    }
+
+    protected function hasEffectiveSearchCriteria(array $filters): bool
+    {
+        return $filters['query'] !== null
+            || $filters['status'] !== null
+            || $filters['role'] !== null
+            || $filters['access_profile'] !== null
+            || $filters['permission'] !== null
+            || $filters['email_verified'] !== null
+            || $filters['two_factor_enabled'] !== null
+            || $filters['has_roles'] !== null;
+    }
+
+    /**
+     * @param  array{query: ?string, status: 'active'|'inactive'|'all'|null, role: ?string, access_profile: ?string, permission: ?string, email_verified: ?bool, two_factor_enabled: ?bool, has_roles: ?bool}  $filters
+     */
+    protected function hasStructuredSearchCriteria(array $filters): bool
+    {
+        return $filters['status'] !== null
+            || $filters['role'] !== null
+            || $filters['access_profile'] !== null
+            || $filters['permission'] !== null
+            || $filters['email_verified'] !== null
+            || $filters['two_factor_enabled'] !== null
+            || $filters['has_roles'] !== null;
+    }
+
+    protected function isTypedSearchQuery(?string $query): bool
+    {
+        if (! is_string($query)) {
+            return false;
+        }
+
+        $normalized = $this->normalizePrompt($query);
+
+        if ($normalized === '') {
+            return false;
+        }
+
+        if ($this->extractEmailFromText($normalized) !== null) {
+            return true;
+        }
+
+        $weakStandaloneTerms = [
+            'alguno',
+            'alguna',
+            'alguien',
+            'otro',
+            'otra',
+            'otros',
+            'otras',
+            'mismo',
+            'misma',
+            'mismos',
+            'mismas',
+            'usuario',
+            'usuarios',
+            'persona',
+            'personas',
+            'gente',
+            'soporte',
+            'finanzas',
+        ];
+
+        if (in_array($normalized, $weakStandaloneTerms, true)) {
+            return false;
+        }
+
+        return $this->searchTokens($normalized) !== [];
+    }
+
     protected function looksLikeActionProposal(string $normalized): bool
     {
-        return preg_match('/\b(propon|prepara|desactiva|desactivalo|activa|reactiva|reactivalo|reset|restablece|restablecele|crea|alta)\b/u', $normalized) === 1
+        return preg_match('/\b(propon|prepara|desactiva|desactivar|desactivalo|activa|activar|reactiva|reactivar|reactivalo|reset|restablece|restablecer|restablecele|crea|crear|alta)\b/u', $normalized) === 1
             || (str_contains($normalized, 'restablecimiento') && preg_match('/\b(necesito|quiero|puedo|ayudame|enviar|envia)\b/u', $normalized) === 1);
     }
 
@@ -1098,7 +2037,7 @@ class UsersCopilotRequestPlanner
             return false;
         }
 
-        return preg_match('/\b(revisa|resume|explica|detalle|estado|acceso|usuario|permisos|roles|puede)\b/u', $normalized) === 1;
+        return preg_match('/\b(revisa|resume|explica|detalle|estado|acceso|usuario|permisos|roles|puede|quien)\b/u', $normalized) === 1;
     }
 
     protected function looksLikeExplicitDetailPrompt(string $normalized): bool
@@ -1113,7 +2052,7 @@ class UsersCopilotRequestPlanner
         }
 
         if ($this->extractEmailFromText($normalized) !== null
-            && preg_match('/\b(usuario|usuaria|revisa|resume|explica|detalle|estado|acceso|permisos|rol|roles)\b/u', $normalized) === 1) {
+            && preg_match('/\b(usuario|usuaria|revisa|resume|explica|detalle|estado|acceso|permisos|rol|roles|quien\s+es)\b/u', $normalized) === 1) {
             return true;
         }
 
@@ -1125,7 +2064,10 @@ class UsersCopilotRequestPlanner
     {
         return preg_match('/\b(busca|buscar|lista|listar|listame|muestra|mostrar|encuentra|encontrar|dame)\b.*\busuarios?\b/u', $normalized) === 1
             || preg_match('/\b(que\s+usuarios|quienes\s+son\s+los\s+usuarios|quienes\s+son)\b/u', $normalized) === 1
-            || preg_match('/\b(quienes?|que\s+usuarios)\b.*\b(rol|perfil|permisos|acceso)\b/u', $normalized) === 1;
+            || preg_match('/\b(quienes?|que\s+usuarios)\b.*\b(rol|perfil|permisos|acceso)\b/u', $normalized) === 1
+            // Preguntas existenciales: "hay algun juan", "existe un usuario", "tienen algun"
+            || preg_match('/\b(hay|existe|tienen?)\b.*\b(algun|alguno|un|una)\b.*\busuarios?\b/u', $normalized) === 1
+            || preg_match('/\b(hay|existe|tienen?)\b.*\b(algun|alguno|un|una)\b.*\b\w{3,}\b/u', $normalized) === 1;
     }
 
     protected function mentionsUserAbstractly(string $normalized): bool
@@ -1150,10 +2092,12 @@ class UsersCopilotRequestPlanner
         }
 
         $patterns = [
-            '/\b(?:explica|explicame|revisa|resume)\s+(?:el|la)?\s*(?:acceso\s+efectivo|estado\s+actual|estado\s+operativo|detalle(?:s)?|resumen)\s+de\s+(.+)$/u',
+            '/\b(?:explica|explicame|revisa|resume)\s+(?:el|la)?\s*(?:acceso\s+efectivo|estado\s+actual|estado|operativo|detalle(?:s)?|resumen)\s+de\s+(.+)$/u',
             '/\b(?:usuario|usuaria|a)\s+(.+)$/u',
             '/\b(?:revisa|resume|explica|detalle|estado|acceso)\s+(?:de\s+)?(.+)$/u',
             '/\b(?:desactiva|activa|reactiva|restablece|propon\s+desactivar\s+a|propon\s+activar\s+a|enviar\s+un\s+restablecimiento\s+a|envia\s+un\s+restablecimiento\s+a)\s+(.+)$/u',
+            '/\b(?:quien\s+es)\s+(.+)$/u',
+            '/\b(?:que\s+permisos\s+tiene|que\s+roles?\s+tiene|que\s+puede\s+hacer|que\s+rol(?:es)?\s+tiene)\s+(.+)$/u',
         ];
 
         foreach ($patterns as $pattern) {
@@ -1163,6 +2107,160 @@ class UsersCopilotRequestPlanner
         }
 
         return null;
+    }
+
+    /**
+     * Find emails similar to the given email using fuzzy matching
+     *
+     * @param  string  $email  The email to find similar matches for
+     * @return array Array of similar emails with their distance score
+     */
+    protected function findSimilarEmails(string $email): array
+    {
+        $similar = [];
+        $maxDistance = 2; // Maximum Levenshtein distance for similarity
+        $limit = 10; // Maximum suggestions to return
+
+        // Get users with emails - LIMIT to prevent memory issues on large tables
+        // TODO: Implement pg_trgm for scalable similarity search (PRD-12)
+        $users = User::whereNotNull('email')->limit(1000)->get();
+
+        foreach ($users as $user) {
+            $distance = levenshtein(strtolower($email), strtolower($user->email));
+
+            // Only consider emails that are similar but not identical
+            if ($distance > 0 && $distance <= $maxDistance) {
+                $similar[] = [
+                    'email' => $user->email,
+                    'distance' => $distance,
+                    'user_id' => $user->id,
+                    'name' => $user->name,
+                ];
+            }
+        }
+
+        // Sort by distance (closest first)
+        usort($similar, function ($a, $b) {
+            return $a['distance'] - $b['distance'];
+        });
+
+        // Return only top matches to prevent UI overload
+        return array_slice($similar, 0, $limit);
+    }
+
+    /**
+     * Find names similar to the given name using fuzzy matching with accent and case insensitivity
+     *
+     * @param  string  $name  The name to find similar matches for
+     * @return array Array of similar names with their distance score
+     */
+    protected function findSimilarNames(string $name): array
+    {
+        $similar = [];
+        $maxDistance = 3; // Maximum Levenshtein distance for name similarity
+        $limit = 10; // Maximum suggestions to return
+
+        // Normalize the input name (remove accents, lowercase)
+        $normalizedName = strtolower(trim($name));
+        $unaccentedName = $this->removeAccents($normalizedName);
+
+        // Get users with names - LIMIT to prevent memory issues on large tables
+        // TODO: Implement pg_trgm for scalable similarity search (PRD-12)
+        $users = User::whereNotNull('name')->limit(1000)->get();
+
+        foreach ($users as $user) {
+            if (empty($user->name)) {
+                continue;
+            }
+
+            // Normalize the user's name
+            $normalizedUserName = strtolower(trim($user->name));
+            $unaccentedUserName = $this->removeAccents($normalizedUserName);
+
+            // Split names into words for partial matching
+            $inputWords = explode(' ', $unaccentedName);
+            $userWords = explode(' ', $unaccentedUserName);
+
+            $foundSimilar = false;
+            $bestDistance = PHP_INT_MAX;
+            $bestSimilarity = 0;
+
+            // Check each input word against each user word
+            foreach ($inputWords as $inputWord) {
+                if (strlen($inputWord) < 2) {
+                    continue;
+                } // Skip very short words
+
+                foreach ($userWords as $userWord) {
+                    if (strlen($userWord) < 2) {
+                        continue;
+                    } // Skip very short words
+
+                    // Calculate distance between words
+                    $distance = levenshtein($inputWord, $userWord);
+
+                    // Check if words are similar but not identical
+                    if ($distance > 0 && $distance <= $maxDistance) {
+                        $similarity = similar_text($inputWord, $userWord, $percent);
+
+                        if ($percent >= 60) { // Higher threshold for word matching
+                            $foundSimilar = true;
+                            $bestDistance = min($bestDistance, $distance);
+                            $bestSimilarity = max($bestSimilarity, $percent);
+                        }
+                    }
+
+                    // Also check if input word is contained in user word or vice versa
+                    // Require minimum length ratio to avoid false positives (e.g., "ana" in "jana")
+                    if (strpos($userWord, $inputWord) !== false || strpos($inputWord, $userWord) !== false) {
+                        $minLength = min(strlen($inputWord), strlen($userWord));
+                        $maxLength = max(strlen($inputWord), strlen($userWord));
+                        $lengthRatio = $minLength / $maxLength;
+
+                        // Only match if: meaningful length AND covers at least 70% of the longer word
+                        if ($minLength >= 3 && $lengthRatio >= 0.7) {
+                            $foundSimilar = true;
+                            $bestDistance = 0;
+                            $bestSimilarity = 80;
+                        }
+                    }
+                }
+            }
+
+            // If we found similarity, add to results
+            if ($foundSimilar) {
+                $similar[] = [
+                    'name' => $user->name,
+                    'distance' => $bestDistance,
+                    'similarity' => $bestSimilarity,
+                    'user_id' => $user->id,
+                    'email' => $user->email,
+                ];
+            }
+        }
+
+        // Sort by distance (closest first) and then by similarity (highest first)
+        usort($similar, function ($a, $b) {
+            if ($a['distance'] === $b['distance']) {
+                return $b['similarity'] <=> $a['similarity'];
+            }
+
+            return $a['distance'] - $b['distance'];
+        });
+
+        // Return only top matches to prevent UI overload
+        return array_slice($similar, 0, $limit);
+    }
+
+    /**
+     * Remove accents from a string
+     */
+    protected function removeAccents(string $string): string
+    {
+        // Using trans-literation to remove accents
+        $string = transliterator_transliterate('Any-Latin; Latin-ASCII;', $string);
+
+        return $string;
     }
 
     /**
@@ -1181,46 +2279,113 @@ class UsersCopilotRequestPlanner
                 ->get();
         }
 
-        $users = User::query()->select(['id', 'name', 'email'])->get();
+        $baseQuery = User::query()->select(['id', 'name', 'email']);
 
-        $exactNameMatches = $users
-            ->filter(fn (User $user): bool => $this->normalizePrompt($user->name) === $normalized)
-            ->values();
+        // Intentar con unaccent primero (PostgreSQL), fallback a ILIKE simple
+        try {
+            // Buscar coincidencias exactas primero (case-insensitive con unaccent)
+            $exactMatches = (clone $baseQuery)
+                ->whereRaw('lower(unaccent(name)) = lower(unaccent(?))', [$query])
+                ->orderBy('name')
+                ->limit(5)
+                ->get();
 
-        if ($exactNameMatches->isNotEmpty()) {
-            return $exactNameMatches->take(5)->values();
+            if ($exactMatches->isNotEmpty()) {
+                return $exactMatches;
+            }
+
+            // Si no hay exactas, buscar con ILIKE
+            $tokens = $this->searchTokens($normalized);
+
+            if (count($tokens) >= 2) {
+                foreach ($tokens as $token) {
+                    $baseQuery->whereRaw('lower(unaccent(name)) LIKE lower(unaccent(?))', ['%'.$token.'%']);
+                }
+            } else {
+                $baseQuery->whereRaw('lower(unaccent(name)) LIKE lower(unaccent(?))', ['%'.$query.'%']);
+            }
+
+            return $baseQuery
+                ->orderByRaw('CASE WHEN lower(unaccent(name)) LIKE lower(unaccent(?)) THEN 0 ELSE 1 END', [$query.'%'])
+                ->orderByRaw('abs(length(name) - length(?))', [$query])
+                ->orderBy('name')
+                ->limit(5)
+                ->get();
+        } catch (\Throwable $e) {
+            // Fallback: usar ILIKE simple sin unaccent (para SQLite o cuando unaccent no está disponible)
+            Log::notice('copilot.entity_resolution.unaccent_fallback', [
+                'error' => $e->getMessage(),
+                'query' => $query,
+                'correlation_id' => Context::get('correlation_id'),
+            ]);
+
+            $baseQuery = User::query()->select(['id', 'name', 'email']);
+
+            // Buscar coincidencias exactas case-insensitive
+            $exactMatches = (clone $baseQuery)
+                ->whereRaw('lower(name) = lower(?)', [$query])
+                ->orderBy('name')
+                ->limit(5)
+                ->get();
+
+            if ($exactMatches->isNotEmpty()) {
+                return $exactMatches;
+            }
+
+            // Buscar con LIKE simple
+            $tokens = $this->searchTokens($normalized);
+
+            if (count($tokens) >= 2) {
+                foreach ($tokens as $token) {
+                    $baseQuery->whereRaw('lower(name) LIKE lower(?)', ['%'.$token.'%']);
+                }
+            } else {
+                $baseQuery->whereRaw('lower(name) LIKE lower(?)', ['%'.$query.'%']);
+            }
+
+            return $baseQuery
+                ->orderByRaw('CASE WHEN lower(name) LIKE lower(?) THEN 0 ELSE 1 END', [$query.'%'])
+                ->orderByRaw('abs(length(name) - length(?))', [$query])
+                ->orderBy('name')
+                ->limit(5)
+                ->get();
+        }
+    }
+
+    protected function shouldConfirmLowConfidenceDetailMatch(string $query, User $match): bool
+    {
+        if ($this->extractEmailFromText($query) !== null) {
+            return false;
         }
 
-        $tokens = $this->searchTokens($normalized);
+        $queryTokens = $this->searchTokens($this->removeAccents($this->normalizePrompt($query)));
+        $nameTokens = $this->searchTokens($this->removeAccents($this->normalizePrompt($match->name)));
 
-        return $users
-            ->filter(function (User $user) use ($normalized, $tokens): bool {
-                $normalizedName = $this->normalizePrompt($user->name);
-                $normalizedEmail = $this->normalizePrompt($user->email);
+        if ($queryTokens === [] || $nameTokens === []) {
+            return false;
+        }
 
-                if ($normalized !== '' && (str_contains($normalizedName, $normalized) || str_contains($normalizedEmail, $normalized))) {
-                    return true;
-                }
+        $usedPrefixFallback = false;
 
-                if (count($tokens) < 2) {
-                    return false;
-                }
+        foreach ($queryTokens as $queryToken) {
+            $matchedExactly = in_array($queryToken, $nameTokens, true);
 
-                foreach ($tokens as $token) {
-                    if (! str_contains($normalizedName, $token)) {
-                        return false;
-                    }
-                }
+            if ($matchedExactly) {
+                continue;
+            }
 
+            $matchedByPrefix = collect($nameTokens)->contains(
+                static fn (string $nameToken): bool => str_starts_with($nameToken, $queryToken)
+            );
+
+            if (! $matchedByPrefix) {
                 return true;
-            })
-            ->sortBy(fn (User $user): array => [
-                str_starts_with($this->normalizePrompt($user->name), $normalized) ? 0 : 1,
-                abs(mb_strlen($this->normalizePrompt($user->name)) - mb_strlen($normalized)),
-                $this->normalizePrompt($user->name),
-            ])
-            ->take(5)
-            ->values();
+            }
+
+            $usedPrefixFallback = true;
+        }
+
+        return $usedPrefixFallback;
     }
 
     /**

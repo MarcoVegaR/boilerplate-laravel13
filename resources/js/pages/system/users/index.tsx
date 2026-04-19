@@ -309,6 +309,7 @@ export default function UsersIndex({ users, roles, filters }: Props) {
                             <CopilotSheet
                                 trigger={
                                     <Button
+                                        data-testid="copilot-open"
                                         type="button"
                                         variant="outline"
                                         size="sm"

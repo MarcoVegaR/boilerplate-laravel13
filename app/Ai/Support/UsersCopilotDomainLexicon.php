@@ -7,6 +7,29 @@ use Illuminate\Support\Str;
 
 final class UsersCopilotDomainLexicon
 {
+    /**
+     * Vocabulario canónico controlado para fuzzy matching.
+     * Estos términos se usan para corregir typos de hasta 2 caracteres de distancia.
+     */
+    private const CANONICAL_VOCABULARY = [
+        // Términos de estado
+        'activo', 'activos', 'inactivo', 'inactivos',
+        // Términos de consulta
+        'usuario', 'usuarios', 'usuaria', 'usuarias',
+        'permiso', 'permisos',
+        'rol', 'roles',
+        // Términos de acción (infinitivos y formas verbales)
+        'activar', 'activa', 'activas',
+        'desactivar', 'desactiva', 'desactivas',
+        'reactivar', 'reactiva', 'reactivas',
+        'restablecer', 'restablece', 'restableces',
+        'crear', 'crea', 'creas',
+        'enviar', 'envia', 'envias',
+        // NOTA: No incluir 'admin'/'administrador' aquí porque son comunes en nombres de usuario
+        // y el typo-correction interferiría con la búsqueda de entidades.
+        // La normalización (método normalize()) ya maneja las variaciones para detección de roles.
+    ];
+
     public static function normalize(string $value): string
     {
         $normalized = Str::of(Str::lower(Str::ascii($value)))->squish()->value();
@@ -118,5 +141,86 @@ final class UsersCopilotDomainLexicon
             'system.users.send-reset' => 'enviar restablecimientos de contraseña',
             'system.users.assign-role' => 'asignar o quitar roles a usuarios',
         ], $permission, $permission);
+    }
+
+    /**
+     * Corrige typos en tokens del prompt normalizado usando fuzzy matching.
+     * Solo aplica a vocabulario canónico controlado con levenshtein <= 2.
+     * Excluye: emails (contienen @), tokens de longitud < 4.
+     *
+     * @param  string  $normalized  Prompt ya normalizado (lowercase, ascii, squished)
+     * @return string Prompt con typos corregidos
+     */
+    public static function correctTypos(string $normalized): string
+    {
+        $tokens = explode(' ', $normalized);
+        $corrected = [];
+
+        foreach ($tokens as $token) {
+            $corrected[] = self::correctToken($token);
+        }
+
+        return implode(' ', $corrected);
+    }
+
+    /**
+     * Corrige un token individual si es similar a un término canónico.
+     * Preserva la puntuación al final del token (comas, puntos, etc.).
+     */
+    private static function correctToken(string $token): string
+    {
+        // Excluir emails (contienen @)
+        if (str_contains($token, '@')) {
+            return $token;
+        }
+
+        // Excluir tokens cortos
+        if (mb_strlen($token) < 4) {
+            return $token;
+        }
+
+        // Separar puntuación trailing para preservarla
+        $stripped = rtrim($token, '.,;:!?');
+        $punctuation = substr($token, strlen($stripped));
+
+        // Si después de quitar puntuación queda muy corto, no corregir
+        if (mb_strlen($stripped) < 4) {
+            return $token;
+        }
+
+        // Excluir palabras comunes del español que podrían confundirse con términos del dominio
+        static $stopWords = ['solo', 'sola', 'solos', 'solas', 'pero', 'como', 'cosa', 'caso',
+            'role', 'este', 'esta', 'esos', 'esas', 'todo', 'toda', 'todos', 'todas',
+            'solo', 'otro', 'otra', 'otros', 'otras', 'para', 'cada', 'nada', 'algo',
+            'creo', 'dime', 'dame', 'hace', 'hola', 'bien', 'malo', 'mala', 'pues',
+        ];
+        if (in_array($stripped, $stopWords, true)) {
+            return $token;
+        }
+
+        // Buscar el término canónico más cercano
+        $bestMatch = null;
+        $bestDistance = PHP_INT_MAX;
+
+        foreach (self::CANONICAL_VOCABULARY as $canonical) {
+            $distance = levenshtein($stripped, $canonical);
+
+            // Solo considerar si la distancia es <= 2 y menor que la actual
+            // Además, exigir que las longitudes sean similares (diff <= 1)
+            // para evitar falsos positivos como "solo" → "rol"
+            $lengthDiff = abs(mb_strlen($stripped) - mb_strlen($canonical));
+            if ($distance <= 2 && $distance < $bestDistance && $lengthDiff <= 1) {
+                $bestDistance = $distance;
+                $bestMatch = $canonical;
+            }
+        }
+
+        // Solo corregir si hay match y la distancia es menor a la longitud del token
+        // (evita corregir palabras muy diferentes)
+        if ($bestMatch !== null && $bestDistance < mb_strlen($stripped)) {
+            return $bestMatch.$punctuation;
+        }
+
+        return $token;
     }
 }

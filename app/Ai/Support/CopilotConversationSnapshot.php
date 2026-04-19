@@ -2,6 +2,7 @@
 
 namespace App\Ai\Support;
 
+use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Support\Arrayable;
 use JsonException;
 use JsonSerializable;
@@ -11,6 +12,12 @@ class CopilotConversationSnapshot implements Arrayable, JsonSerializable
     public const VERSION = 1;
 
     public const RESULT_USER_ID_LIMIT = 8;
+
+    public const FRESHNESS_FRESH = 'fresh';
+
+    public const FRESHNESS_STALE = 'stale';
+
+    public const FRESHNESS_EXPIRED = 'expired';
 
     /**
      * @param  array<string, mixed>  $attributes
@@ -25,7 +32,7 @@ class CopilotConversationSnapshot implements Arrayable, JsonSerializable
         return new self;
     }
 
-    public static function fromDatabase(mixed $snapshot, mixed $version = null): self
+    public static function fromDatabase(mixed $snapshot, mixed $version = null, mixed $lastTurnAt = null): self
     {
         $attributes = [];
 
@@ -48,6 +55,10 @@ class CopilotConversationSnapshot implements Arrayable, JsonSerializable
         $attributes['conversation_state_version'] = is_numeric($version)
             ? (int) $version
             : ($attributes['conversation_state_version'] ?? self::VERSION);
+
+        if ($lastTurnAt !== null) {
+            $attributes['last_turn_at'] = $lastTurnAt;
+        }
 
         return new self($attributes);
     }
@@ -131,6 +142,81 @@ class CopilotConversationSnapshot implements Arrayable, JsonSerializable
             || $this->resolvedEntity() !== null;
     }
 
+    /**
+     * Fase 1c: timestamp del ultimo turn sobre el snapshot (fuente de verdad
+     * para staleness). Se persiste en columna dedicada pero tambien viaja en
+     * los attributes para evaluacion pura.
+     */
+    public function lastTurnAt(): ?CarbonImmutable
+    {
+        $raw = $this->attributes['last_turn_at'] ?? null;
+
+        if ($raw === null) {
+            return null;
+        }
+
+        if ($raw instanceof CarbonImmutable) {
+            return $raw;
+        }
+
+        try {
+            return CarbonImmutable::parse((string) $raw);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Fase 1c: freshness tri-valuada. Fuentes de verdad:
+     * - fresh: within soft ttl. Continuacion deictica automatica aceptable.
+     * - stale: between soft y hard ttl. Requiere confirmacion explicita.
+     * - expired: beyond hard ttl. Snapshot se descarta por el planner.
+     */
+    public function freshness(?CarbonImmutable $now = null): string
+    {
+        if (! $this->hasContext()) {
+            return self::FRESHNESS_FRESH;
+        }
+
+        $lastTurn = $this->lastTurnAt();
+
+        if ($lastTurn === null) {
+            // Sin timestamp se asume fresh para no romper snapshots legacy;
+            // se escribira `last_turn_at` en el proximo write por el
+            // CopilotConversationService.
+            return self::FRESHNESS_FRESH;
+        }
+
+        $now ??= CarbonImmutable::now();
+        $softMinutes = (int) config('ai-copilot.snapshot.ttl_soft_minutes', 30);
+        $hardHours = (int) config('ai-copilot.snapshot.ttl_hard_hours', 24);
+
+        $minutesSince = max(0, $now->diffInMinutes($lastTurn, true));
+
+        if ($minutesSince <= $softMinutes) {
+            return self::FRESHNESS_FRESH;
+        }
+
+        if ($minutesSince <= $hardHours * 60) {
+            return self::FRESHNESS_STALE;
+        }
+
+        return self::FRESHNESS_EXPIRED;
+    }
+
+    public function minutesSinceLastTurn(?CarbonImmutable $now = null): ?int
+    {
+        $lastTurn = $this->lastTurnAt();
+
+        if ($lastTurn === null) {
+            return null;
+        }
+
+        $now ??= CarbonImmutable::now();
+
+        return (int) max(0, $now->diffInMinutes($lastTurn, true));
+    }
+
     public function singleResultUserId(): ?int
     {
         $userIds = $this->lastResultUserIds();
@@ -150,13 +236,16 @@ class CopilotConversationSnapshot implements Arrayable, JsonSerializable
     }
 
     /**
-     * @return array{snapshot: string, snapshot_version: int}
+     * @return array{snapshot: string, snapshot_version: int, last_turn_at: string|null}
      */
     public function toDatabase(): array
     {
+        $lastTurn = $this->lastTurnAt();
+
         return [
             'snapshot' => json_encode($this->jsonSerialize(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),
             'snapshot_version' => $this->version(),
+            'last_turn_at' => $lastTurn?->format('Y-m-d H:i:s'),
         ];
     }
 
@@ -199,7 +288,14 @@ class CopilotConversationSnapshot implements Arrayable, JsonSerializable
      */
     public function jsonSerialize(): array
     {
-        return $this->toArray();
+        $serialized = $this->toArray();
+        $lastTurn = $serialized['last_turn_at'] ?? null;
+
+        if ($lastTurn instanceof CarbonImmutable) {
+            $serialized['last_turn_at'] = $lastTurn->toIso8601String();
+        }
+
+        return $serialized;
     }
 
     /**
@@ -262,6 +358,24 @@ class CopilotConversationSnapshot implements Arrayable, JsonSerializable
             'conversation_state_version' => is_numeric($attributes['conversation_state_version'] ?? null)
                 ? max((int) $attributes['conversation_state_version'], 1)
                 : self::VERSION,
+            'last_turn_at' => self::normalizeLastTurnAt($attributes['last_turn_at'] ?? null),
         ];
+    }
+
+    protected static function normalizeLastTurnAt(mixed $value): ?CarbonImmutable
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if ($value instanceof CarbonImmutable) {
+            return $value;
+        }
+
+        try {
+            return CarbonImmutable::parse((string) $value);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 }

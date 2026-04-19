@@ -3,11 +3,6 @@
 use App\Ai\Services\UsersCopilotRequestPlanner;
 use App\Ai\Support\CopilotConversationSnapshot;
 use App\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Tests\TestCase;
-
-uses(TestCase::class);
-uses(RefreshDatabase::class);
 
 it('reuses the previous search subset for deterministic follow-up counts', function () {
     $planner = new UsersCopilotRequestPlanner;

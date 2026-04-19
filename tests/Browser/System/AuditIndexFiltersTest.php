@@ -15,7 +15,17 @@ beforeEach(function () {
     $this->seed(AccessModulePermissionsSeeder::class);
     $this->seed(AuditModulePermissionsSeeder::class);
 
-    Vite::useHotFile(storage_path('framework/testing/vite.hot'));
+    $publicHotPath = public_path('hot');
+    if (file_exists($publicHotPath)) {
+        unlink($publicHotPath);
+    }
+
+    $hotPath = storage_path('framework/testing/vite.hot');
+    if (file_exists($hotPath)) {
+        unlink($hotPath);
+    }
+
+    Vite::useHotFile($hotPath);
 });
 
 it('shows date-only clear actions and searchable actor and event filters', function () {

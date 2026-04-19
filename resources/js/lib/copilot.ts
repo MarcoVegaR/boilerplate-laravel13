@@ -22,7 +22,36 @@ export type CopilotIntent =
     | 'action_proposal'
     | 'ambiguous'
     | 'out_of_scope'
-    | 'error';
+    | 'error'
+    // Fase 1a: denied como intent diferenciado de ambiguous
+    | 'denied'
+    // Fase 1c: confirmacion de continuacion con snapshot stale
+    | 'continuation_confirm'
+    // Fase 3: respuestas parciales honestas (mixed-intent con segmentos no ejecutados)
+    | 'partial';
+
+export type CopilotDenialCategory =
+    | 'sensitive_data'
+    | 'impersonation'
+    | 'unsupported_operation'
+    | 'unsupported_bulk';
+
+export type CopilotInterpretationSource =
+    | 'deterministic'
+    | 'deterministic_denial'
+    | 'snapshot_stale'
+    | 'llm_rescue'
+    | 'provider';
+
+export type CopilotInterpretation = {
+    understood_intent: string;
+    applied_filters: Record<string, unknown>;
+    entity: { type: string; id: number | null; label: string | null } | null;
+    source: CopilotInterpretationSource;
+    confidence: 'high' | 'medium' | 'low';
+    capability_key: string | null;
+    intent_family: string | null;
+};
 
 export type CopilotResponseSource =
     | 'native_tools'
@@ -197,12 +226,54 @@ export type CopilotNoticeCard = {
     data: Record<string, unknown>;
 };
 
+export type CopilotDeniedCard = {
+    kind: 'denied';
+    title: string | null;
+    summary: string | null;
+    data: {
+        category: CopilotDenialCategory;
+        reason: string;
+        message: string;
+        alternatives: Array<{ label: string; prompt: string }>;
+    };
+};
+
+export type CopilotContinuationConfirmCard = {
+    kind: 'continuation_confirm';
+    title: string | null;
+    summary: string | null;
+    data: {
+        freshness: 'stale' | 'expired';
+        question: string;
+        entity_label: string | null;
+        minutes_elapsed: number | null;
+        options: Array<{ label: string; value: string }>;
+    };
+};
+
+export type CopilotPartialNoticeCard = {
+    kind: 'partial_notice';
+    title: string | null;
+    summary: string | null;
+    data: {
+        segments: Array<{
+            text: string;
+            status: 'not_executed' | 'failed' | 'skipped';
+            reason: string;
+            suggested_follow_up: string | null;
+        }>;
+    };
+};
+
 export type CopilotCard =
     | CopilotNoticeCard
     | CopilotSearchResultsCard
     | CopilotUserContextCard
     | CopilotMetricsCard
-    | CopilotClarificationCard;
+    | CopilotClarificationCard
+    | CopilotDeniedCard
+    | CopilotContinuationConfirmCard
+    | CopilotPartialNoticeCard;
 
 export type CopilotResponse = {
     answer: string;
@@ -211,6 +282,9 @@ export type CopilotResponse = {
     actions: CopilotActionProposal[];
     requires_confirmation: boolean;
     references: CopilotReference[];
+    // Fase 1b: bloque opcional de explicabilidad. Renderizado como header
+    // discreto en el UI cuando existe.
+    interpretation?: CopilotInterpretation | null;
     meta: {
         module: string;
         channel: string;

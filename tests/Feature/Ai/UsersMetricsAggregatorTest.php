@@ -7,10 +7,6 @@ use App\Models\User;
 use Database\Seeders\AccessModulePermissionsSeeder;
 use Database\Seeders\AiCopilotPermissionsSeeder;
 use Database\Seeders\RolesAndPermissionsSeeder;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Tests\TestCase;
-
-uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function () {
     $this->seed(RolesAndPermissionsSeeder::class);

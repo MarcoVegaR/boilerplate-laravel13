@@ -2,22 +2,31 @@ import { Link } from '@inertiajs/react';
 import {
     Bot,
     CheckCircle2,
+    Clock,
     HelpCircle,
     ListChecks,
     Search,
+    ShieldAlert,
+    SplitSquareHorizontal,
+    Sparkles,
     TrendingUp,
     UserRoundSearch,
 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import type {
     CopilotActionProposal,
     CopilotActionResult,
     CopilotCard,
     CopilotClarificationCard,
+    CopilotContinuationConfirmCard,
+    CopilotDeniedCard,
+    CopilotInterpretation,
     CopilotMetricsCard,
     CopilotNoticeCard,
+    CopilotPartialNoticeCard,
     CopilotResponse,
     CopilotSearchResultsCard,
 } from '@/lib/copilot';
@@ -52,6 +61,12 @@ type CopilotMessageListProps = {
     items: CopilotTimelineItem[];
     canConfirmActions: boolean;
     onConfirmAction: (action: CopilotActionProposal) => void;
+    /**
+     * Fase 1a/1c: callback para re-enviar un prompt desde tarjetas
+     * interactivas (alternativas del DeniedCard, opciones del
+     * ContinuationConfirmCard).
+     */
+    onSelectPrompt?: (prompt: string) => void;
 };
 
 function SearchResultsCard({ card }: { card: CopilotSearchResultsCard }) {
@@ -265,7 +280,192 @@ function NoticeCard({ card }: { card: CopilotNoticeCard }) {
     );
 }
 
-function renderCard(card: CopilotCard) {
+function DeniedCard({
+    card,
+    onSelectPrompt,
+}: {
+    card: CopilotDeniedCard;
+    onSelectPrompt?: (prompt: string) => void;
+}) {
+    const alternatives = Array.isArray(card.data.alternatives)
+        ? card.data.alternatives
+        : [];
+
+    return (
+        <Card className="gap-3 border-destructive/30 bg-destructive/5 py-4">
+            <CardContent className="space-y-3 px-4">
+                <div className="flex items-center gap-2 text-sm font-medium text-destructive">
+                    <ShieldAlert className="size-4" />
+                    {card.title ?? 'No puedo procesar esta solicitud'}
+                </div>
+                <p className="text-sm text-foreground/90">
+                    {card.data.message}
+                </p>
+                {alternatives.length > 0 && (
+                    <div className="space-y-2 border-t border-destructive/20 pt-3">
+                        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                            En su lugar puedo
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                            {alternatives.map((alt) => (
+                                <Button
+                                    key={alt.label}
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() =>
+                                        onSelectPrompt?.(alt.prompt)
+                                    }
+                                    disabled={!onSelectPrompt}
+                                >
+                                    {alt.label}
+                                </Button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </CardContent>
+        </Card>
+    );
+}
+
+function ContinuationConfirmCard({
+    card,
+    onSelectPrompt,
+}: {
+    card: CopilotContinuationConfirmCard;
+    onSelectPrompt?: (prompt: string) => void;
+}) {
+    const options = Array.isArray(card.data.options) ? card.data.options : [];
+
+    return (
+        <Card className="gap-3 border-sky-500/30 bg-sky-50/60 py-4 dark:bg-sky-500/5">
+            <CardContent className="space-y-3 px-4">
+                <div className="flex items-center gap-2 text-sm font-medium text-sky-950 dark:text-sky-100">
+                    <Clock className="size-4" />
+                    {card.title ?? 'Confirmacion de continuacion'}
+                </div>
+                <p className="text-sm text-sky-900/80 dark:text-sky-100/80">
+                    {card.data.question}
+                </p>
+                {card.data.minutes_elapsed !== null && (
+                    <p className="text-xs text-muted-foreground">
+                        Ultima interaccion hace aprox {card.data.minutes_elapsed}{' '}
+                        minutos.
+                    </p>
+                )}
+                {options.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                        {options.map((option) => (
+                            <Button
+                                key={option.value}
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                    onSelectPrompt?.(option.label)
+                                }
+                                disabled={!onSelectPrompt}
+                            >
+                                {option.label}
+                            </Button>
+                        ))}
+                    </div>
+                )}
+            </CardContent>
+        </Card>
+    );
+}
+
+function PartialNoticeCard({ card }: { card: CopilotPartialNoticeCard }) {
+    const segments = Array.isArray(card.data.segments)
+        ? card.data.segments
+        : [];
+
+    if (segments.length === 0) {
+        return null;
+    }
+
+    return (
+        <Card className="gap-3 border-amber-500/30 bg-amber-50/30 py-4 dark:bg-amber-500/5">
+            <CardContent className="space-y-2 px-4">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                    <SplitSquareHorizontal className="size-4" />
+                    {card.title ?? 'Respuesta parcial'}
+                </div>
+                {card.summary && (
+                    <p className="text-sm text-muted-foreground">
+                        {card.summary}
+                    </p>
+                )}
+                <ul className="space-y-2 pt-1 text-sm">
+                    {segments.map((segment, index) => (
+                        <li
+                            key={`${card.kind}-${index}`}
+                            className="rounded-md border bg-background/70 p-2"
+                        >
+                            <p className="font-medium">{segment.text}</p>
+                            <p className="text-xs text-muted-foreground">
+                                No ejecutado: {segment.reason}
+                            </p>
+                            {segment.suggested_follow_up && (
+                                <p className="pt-1 text-xs text-primary/80">
+                                    Sugerencia: {segment.suggested_follow_up}
+                                </p>
+                            )}
+                        </li>
+                    ))}
+                </ul>
+            </CardContent>
+        </Card>
+    );
+}
+
+function InterpretationHeader({
+    interpretation,
+}: {
+    interpretation: CopilotInterpretation;
+}) {
+    const filters = Object.entries(interpretation.applied_filters ?? {}).filter(
+        ([, value]) => value !== null && value !== '',
+    );
+
+    return (
+        <div className="flex items-start gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs">
+            <Sparkles className="mt-0.5 size-3.5 shrink-0 text-primary/70" />
+            <div className="space-y-0.5 leading-snug">
+                <p className="font-medium text-foreground/90">
+                    Entendi: {interpretation.understood_intent}
+                </p>
+                {filters.length > 0 && (
+                    <p className="text-muted-foreground">
+                        Filtros:{' '}
+                        {filters
+                            .map(
+                                ([key, value]) =>
+                                    `${key}=${
+                                        typeof value === 'boolean'
+                                            ? value
+                                                ? 'si'
+                                                : 'no'
+                                            : String(value)
+                                    }`,
+                            )
+                            .join(', ')}
+                    </p>
+                )}
+                {interpretation.entity?.label && (
+                    <p className="text-muted-foreground">
+                        Sujeto: {interpretation.entity.label}
+                    </p>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function renderCard(
+    card: CopilotCard,
+    onSelectPrompt?: (prompt: string) => void,
+) {
     if (card.kind === 'user_context') {
         return (
             <CopilotUserContextCard
@@ -295,6 +495,35 @@ function renderCard(card: CopilotCard) {
         return <NoticeCard key={`${card.kind}-${card.title}`} card={card} />;
     }
 
+    if (card.kind === 'denied') {
+        return (
+            <DeniedCard
+                key={`${card.kind}-${card.title}`}
+                card={card}
+                onSelectPrompt={onSelectPrompt}
+            />
+        );
+    }
+
+    if (card.kind === 'continuation_confirm') {
+        return (
+            <ContinuationConfirmCard
+                key={`${card.kind}-${card.title}`}
+                card={card}
+                onSelectPrompt={onSelectPrompt}
+            />
+        );
+    }
+
+    if (card.kind === 'partial_notice') {
+        return (
+            <PartialNoticeCard
+                key={`${card.kind}-${card.title}`}
+                card={card}
+            />
+        );
+    }
+
     return null;
 }
 
@@ -302,6 +531,7 @@ export function CopilotMessageList({
     items,
     canConfirmActions,
     onConfirmAction,
+    onSelectPrompt,
 }: CopilotMessageListProps) {
     return (
         <div className="space-y-4 p-4">
@@ -362,6 +592,14 @@ export function CopilotMessageList({
                             </div>
 
                             <div className="min-w-0 flex-1 space-y-3">
+                                {item.response.interpretation && (
+                                    <InterpretationHeader
+                                        interpretation={
+                                            item.response.interpretation
+                                        }
+                                    />
+                                )}
+
                                 <div className="rounded-2xl border bg-card px-4 py-3 shadow-sm">
                                     <CopilotMarkdown
                                         content={item.response.answer}
@@ -369,7 +607,7 @@ export function CopilotMessageList({
                                 </div>
 
                                 {item.response.cards.map((card) =>
-                                    renderCard(card),
+                                    renderCard(card, onSelectPrompt),
                                 )}
 
                                 {item.response.actions.map((action) => (

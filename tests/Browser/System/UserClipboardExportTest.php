@@ -13,7 +13,17 @@ beforeEach(function () {
     $this->seed(RolesAndPermissionsSeeder::class);
     $this->seed(AccessModulePermissionsSeeder::class);
 
-    Vite::useHotFile(storage_path('framework/testing/vite.hot'));
+    $publicHotPath = public_path('hot');
+    if (file_exists($publicHotPath)) {
+        unlink($publicHotPath);
+    }
+
+    $hotPath = storage_path('framework/testing/vite.hot');
+    if (file_exists($hotPath)) {
+        unlink($hotPath);
+    }
+
+    Vite::useHotFile($hotPath);
 });
 
 it('copies filtered users as TSV for excel', function () {

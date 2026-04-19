@@ -167,6 +167,7 @@ export function CopilotPanel({ subjectUser }: CopilotPanelProps) {
                                 canExecuteCopilot
                             }
                             onConfirmAction={setSelectedAction}
+                            onSelectPrompt={(prompt) => submitPrompt(prompt)}
                         />
                         {loading && (
                             <div className="space-y-3 px-4 pb-4">

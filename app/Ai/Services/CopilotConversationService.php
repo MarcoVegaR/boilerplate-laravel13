@@ -11,6 +11,7 @@ use App\Ai\Support\CopilotProviderProfile;
 use App\Ai\Support\CopilotStructuredOutput;
 use App\Ai\Testing\BrowserCopilotFakeTransport;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Support\Arr;
@@ -379,22 +380,29 @@ class CopilotConversationService
     protected function loadSnapshot(string $conversationId): CopilotConversationSnapshot
     {
         $conversation = $this->database->table('agent_conversations')
-            ->select(['snapshot', 'snapshot_version'])
+            ->select(['snapshot', 'snapshot_version', 'last_turn_at'])
             ->where('id', $conversationId)
             ->first();
 
         return CopilotConversationSnapshot::fromDatabase(
             $conversation?->snapshot,
             $conversation?->snapshot_version,
+            $conversation?->last_turn_at,
         );
     }
 
+    /**
+     * Fase 1c: cada persist actualiza `last_turn_at` para el snapshot. Eso
+     * alimenta la semantica de freshness tri-valuada.
+     */
     protected function persistSnapshot(string $conversationId, CopilotConversationSnapshot $snapshot): void
     {
+        $stamped = $snapshot->with(['last_turn_at' => CarbonImmutable::now()]);
+
         $this->database->table('agent_conversations')
             ->where('id', $conversationId)
             ->update([
-                ...$snapshot->toDatabase(),
+                ...$stamped->toDatabase(),
                 'updated_at' => now(),
             ]);
     }
@@ -406,6 +414,30 @@ class CopilotConversationService
     protected function plannedExecutionResult(User $actor, array $plan): ?array
     {
         $capabilityKey = $plan['capability_key'] ?? null;
+
+        if ($capabilityKey === 'users.clarification') {
+            return [
+                'family' => 'clarification',
+                'data' => $plan['clarification_state'] ?? [],
+            ];
+        }
+
+        // Fase 1c: continuation_confirm bypasea provider y va al response builder
+        // directamente (staleness semantics).
+        if ($capabilityKey === 'users.continuation.confirm') {
+            return [
+                'family' => 'continuation_confirm',
+                'data' => $plan['clarification_state'] ?? [],
+            ];
+        }
+
+        // Fase 1a: users.denied bypasea provider y va al response builder.
+        if ($capabilityKey === 'users.denied') {
+            return [
+                'family' => 'denied',
+                'data' => $plan['clarification_state'] ?? [],
+            ];
+        }
 
         if ($capabilityKey === 'users.mixed.metrics_search') {
             return $this->usersCopilotCapabilityExecutor->executeMixedMetricsSearch(
@@ -506,6 +538,17 @@ class CopilotConversationService
     {
         $family = $executionResult['family'] ?? null;
 
-        return in_array($family, ['aggregate', 'list', 'detail', 'action', 'mixed', 'explain'], true);
+        return in_array($family, [
+            'aggregate',
+            'list',
+            'detail',
+            'action',
+            'mixed',
+            'explain',
+            'clarification',
+            // Fase 1a/1c: denied y continuation_confirm no necesitan provider.
+            'denied',
+            'continuation_confirm',
+        ], true);
     }
 }

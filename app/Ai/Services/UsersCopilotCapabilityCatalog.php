@@ -7,9 +7,9 @@ class UsersCopilotCapabilityCatalog
     /**
      * @return array<string, array{
      *   key: string,
-     *   family: 'aggregate'|'list'|'detail'|'action'|'help'|'clarification'|'mixed'|'explain',
-     *   intent_family: 'read_metrics'|'read_search'|'read_detail'|'action_proposal'|'help'|'ambiguous'|'read_explain',
-     *   response_intent: 'metrics'|'search_results'|'user_context'|'action_proposal'|'help'|'ambiguous'|'notice',
+     *   family: 'aggregate'|'list'|'detail'|'action'|'help'|'clarification'|'mixed'|'explain'|'denied'|'continuation',
+     *   intent_family: 'read_metrics'|'read_search'|'read_detail'|'action_proposal'|'help'|'ambiguous'|'read_explain'|'denied'|'continuation_confirm',
+     *   response_intent: 'metrics'|'search_results'|'user_context'|'action_proposal'|'help'|'ambiguous'|'notice'|'denied'|'continuation_confirm',
      *   requires_entity: bool,
      *   supports_follow_up: bool,
      *   required_filters: list<string>,
@@ -249,6 +249,26 @@ class UsersCopilotCapabilityCatalog
                 'required_filters' => [],
                 'follow_up_affordances' => [],
             ],
+            'users.help.informational' => [
+                'key' => 'users.help.informational',
+                'family' => 'help',
+                'intent_family' => 'help',
+                'response_intent' => 'help',
+                'requires_entity' => false,
+                'supports_follow_up' => false,
+                'required_filters' => [],
+                'follow_up_affordances' => [],
+            ],
+            'users.help.unknown' => [
+                'key' => 'users.help.unknown',
+                'family' => 'help',
+                'intent_family' => 'help',
+                'response_intent' => 'help',
+                'requires_entity' => false,
+                'supports_follow_up' => false,
+                'required_filters' => [],
+                'follow_up_affordances' => [],
+            ],
             'users.clarification' => [
                 'key' => 'users.clarification',
                 'family' => 'clarification',
@@ -258,6 +278,26 @@ class UsersCopilotCapabilityCatalog
                 'supports_follow_up' => true,
                 'required_filters' => [],
                 'follow_up_affordances' => ['clarify_target', 'clarify_scope'],
+            ],
+            'users.denied' => [
+                'key' => 'users.denied',
+                'family' => 'denied',
+                'intent_family' => 'denied',
+                'response_intent' => 'denied',
+                'requires_entity' => false,
+                'supports_follow_up' => false,
+                'required_filters' => [],
+                'follow_up_affordances' => [],
+            ],
+            'users.continuation.confirm' => [
+                'key' => 'users.continuation.confirm',
+                'family' => 'continuation',
+                'intent_family' => 'continuation_confirm',
+                'response_intent' => 'continuation_confirm',
+                'requires_entity' => false,
+                'supports_follow_up' => true,
+                'required_filters' => [],
+                'follow_up_affordances' => ['confirm_continuation', 'start_fresh'],
             ],
         ];
     }
@@ -300,5 +340,55 @@ class UsersCopilotCapabilityCatalog
             self::all(),
             static fn (array $definition): bool => $definition['family'] === 'aggregate',
         )));
+    }
+
+    /**
+     * Schema tipado de filters para validación de valores retornados por LLM.
+     * Fuente de verdad única para tipos de filtros por capability.
+     *
+     * @return array<string, array{type: string, values?: list<string>}>
+     */
+    public static function filterSchema(): array
+    {
+        return [
+            'query' => ['type' => 'string'],
+            'status' => ['type' => 'enum', 'values' => ['active', 'inactive']],
+            'role' => ['type' => 'string'],
+            'email_verified' => ['type' => 'boolean'],
+            'has_roles' => ['type' => 'boolean'],
+            'user_id' => ['type' => 'integer'],
+            'target_user_id' => ['type' => 'integer'],
+            'permission' => ['type' => 'string'],
+            'action_type' => ['type' => 'enum', 'values' => ['activate', 'deactivate', 'send_reset', 'create_user']],
+            'access_profile' => ['type' => 'string'],
+            'name' => ['type' => 'string'],
+            'email' => ['type' => 'string'],
+            'roles' => ['type' => 'array', 'items' => 'string'],
+        ];
+    }
+
+    /**
+     * Valida que un valor de filtro coincida con el tipo esperado.
+     *
+     * @param  string  $filterKey  Clave del filtro
+     * @param  mixed  $value  Valor a validar
+     * @return bool True si el valor es válido para el tipo esperado
+     */
+    public static function isValidFilterValue(string $filterKey, mixed $value): bool
+    {
+        $schema = self::filterSchema()[$filterKey] ?? null;
+
+        if ($schema === null) {
+            return false; // Filtro no reconocido
+        }
+
+        return match ($schema['type']) {
+            'string' => is_string($value),
+            'integer' => is_int($value) || (is_string($value) && ctype_digit($value)),
+            'boolean' => is_bool($value) || in_array($value, [true, false, 1, 0, '1', '0'], true),
+            'array' => is_array($value),
+            'enum' => is_string($value) && in_array($value, $schema['values'] ?? [], true),
+            default => false,
+        };
     }
 }

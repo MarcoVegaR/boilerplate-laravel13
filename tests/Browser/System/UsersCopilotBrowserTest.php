@@ -23,10 +23,16 @@ beforeEach(function () {
 
     config(['ai-copilot.enabled' => true]);
 
+    $publicHotPath = public_path('hot');
+    if (file_exists($publicHotPath)) {
+        unlink($publicHotPath);
+    }
+
     $hotPath = storage_path('framework/testing/vite.hot');
     if (file_exists($hotPath)) {
         unlink($hotPath);
     }
+
     Vite::useHotFile($hotPath);
 });
 
@@ -116,8 +122,9 @@ it('shows the copilot entrypoint, filters empty state prompts, and disables conf
 
     $page = visit(route('system.users.index', [], false));
 
-    $page->assertSee('Copiloto')
-        ->click('Copiloto')
+    $page->assertPresent('@copilot-open')
+        ->assertVisible('@copilot-open')
+        ->click('@copilot-open')
         ->assertSee('Copiloto de usuarios')
         ->assertSee('Buscar usuarios inactivos')
         ->assertSee('Proponer un restablecimiento')
@@ -184,7 +191,9 @@ it('confirms an executable copilot proposal from the browser flow', function () 
 
     $page = visit(route('system.users.index', [], false));
 
-    $page->click('Copiloto')
+    $page->assertPresent('@copilot-open')
+        ->assertVisible('@copilot-open')
+        ->click('@copilot-open')
         ->assertPresent('@copilot-prompt')
         ->assertVisible('@copilot-prompt')
         ->type('@copilot-prompt', 'Necesito enviar un restablecimiento a Resettable User')

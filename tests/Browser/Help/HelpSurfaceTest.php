@@ -15,6 +15,11 @@ beforeEach(function () {
     $this->seed(AccessModulePermissionsSeeder::class);
     $this->seed(AuditModulePermissionsSeeder::class);
 
+    $publicHotPath = public_path('hot');
+    if (file_exists($publicHotPath)) {
+        unlink($publicHotPath);
+    }
+
     $hotPath = storage_path('framework/testing/vite.hot');
     if (file_exists($hotPath)) {
         unlink($hotPath);

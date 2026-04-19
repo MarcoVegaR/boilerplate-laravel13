@@ -83,4 +83,45 @@ return [
     'fallback' => [
         'message' => 'No pude procesar la solicitud del copiloto de usuarios de forma segura. Intenta nuevamente con una instruccion mas concreta.',
     ],
+
+    'intent_classifier' => [
+        'enabled' => (bool) env('COPILOT_INTENT_CLASSIFIER_ENABLED', false),
+        'confidence_threshold' => (float) env('COPILOT_INTENT_CLASSIFIER_THRESHOLD', 0.7),
+        'timeout' => (int) env('COPILOT_INTENT_CLASSIFIER_TIMEOUT', 5),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Contratos de respuesta (Fase 1)
+    |--------------------------------------------------------------------------
+    |
+    | Feature flags para la migracion gradual del contrato canonico.
+    | - denied_intent: separa rechazos ('denied') de ambiguedad ('ambiguous').
+    |   Cuando esta en false, la denegacion se emite como 'ambiguous' (legacy).
+    | - interpretation: anade el bloque `interpretation` en cada respuesta
+    |   con `understood_intent`, `applied_filters`, `entity`, `source`.
+    */
+    'contracts' => [
+        'denied_intent' => (bool) env('COPILOT_CONTRACT_DENIED_INTENT', true),
+        'interpretation' => (bool) env('COPILOT_CONTRACT_INTERPRETATION', true),
+        'staleness_confirmation' => (bool) env('COPILOT_CONTRACT_STALENESS_CONFIRMATION', true),
+        'help_unknown_split' => (bool) env('COPILOT_CONTRACT_HELP_UNKNOWN_SPLIT', true),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Snapshot TTL (Fase 1c)
+    |--------------------------------------------------------------------------
+    |
+    | Soft TTL: el contexto se considera `stale`; el planner pide confirmacion
+    |   antes de reusarlo para continuaciones deicticas.
+    | Hard TTL: el contexto se considera `expired`; el planner lo ignora y
+    |   trata el turn como fresco.
+    | Cleanup: un job programado borra snapshots con ultimo turn > retention.
+    */
+    'snapshot' => [
+        'ttl_soft_minutes' => (int) env('COPILOT_SNAPSHOT_TTL_SOFT_MINUTES', 30),
+        'ttl_hard_hours' => (int) env('COPILOT_SNAPSHOT_TTL_HARD_HOURS', 24),
+        'retention_days' => (int) env('COPILOT_SNAPSHOT_RETENTION_DAYS', 30),
+    ],
 ];

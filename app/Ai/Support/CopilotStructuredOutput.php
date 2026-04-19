@@ -16,13 +16,48 @@ class CopilotStructuredOutput
 
     public const PROFILE_GEMINI = 'gemini';
 
-    public const CARD_KINDS = ['notice', 'search_results', 'user_context', 'metrics', 'clarification'];
+    public const CARD_KINDS = [
+        'notice',
+        'search_results',
+        'user_context',
+        'metrics',
+        'clarification',
+        // Fase 1a: denied y continuation_confirm como cards de primera clase
+        'denied',
+        'continuation_confirm',
+        // Fase 3: partial_notice para mixed-intent con segmentos no ejecutados
+        'partial_notice',
+    ];
 
-    public const INTENTS = ['help', 'metrics', 'search_results', 'user_context', 'action_proposal', 'ambiguous', 'out_of_scope', 'error'];
+    public const INTENTS = [
+        'help',
+        'metrics',
+        'search_results',
+        'user_context',
+        'action_proposal',
+        'ambiguous',
+        'out_of_scope',
+        'error',
+        // Fase 1a: denied e continuation_confirm como intents diferenciados
+        'denied',
+        'continuation_confirm',
+        // Fase 3: partial para respuestas incompletas honestas
+        'partial',
+    ];
 
     public const LEGACY_INTENTS = ['inform'];
 
     public const RESPONSE_SOURCES = ['native_tools', 'local_orchestrator', 'fallback'];
+
+    /**
+     * Categorias validas de denegacion por contenido.
+     */
+    public const DENIAL_CATEGORIES = [
+        'sensitive_data',
+        'impersonation',
+        'unsupported_operation',
+        'unsupported_bulk',
+    ];
 
     /**
      * Get the structured schema shared by copilot agents.
@@ -554,6 +589,71 @@ class CopilotStructuredOutput
             ];
         }
 
+        if ($kind === 'denied') {
+            $category = is_string($data['category'] ?? null) ? $data['category'] : 'unsupported_operation';
+            if (! in_array($category, self::DENIAL_CATEGORIES, true)) {
+                $category = 'unsupported_operation';
+            }
+
+            return [
+                'category' => $category,
+                'reason' => is_string($data['reason'] ?? null) ? $data['reason'] : $category,
+                'message' => is_string($data['message'] ?? null) ? $data['message'] : '',
+                'alternatives' => array_values(array_map(
+                    static fn (array $alt): array => [
+                        'label' => is_string($alt['label'] ?? null) ? $alt['label'] : '',
+                        'prompt' => is_string($alt['prompt'] ?? null) ? $alt['prompt'] : '',
+                    ],
+                    array_filter(
+                        Arr::wrap($data['alternatives'] ?? []),
+                        static fn (mixed $alt): bool => is_array($alt),
+                    ),
+                )),
+            ];
+        }
+
+        if ($kind === 'continuation_confirm') {
+            return [
+                'freshness' => in_array($data['freshness'] ?? null, ['stale', 'expired'], true)
+                    ? $data['freshness']
+                    : 'stale',
+                'question' => is_string($data['question'] ?? null) ? $data['question'] : '',
+                'entity_label' => is_string($data['entity_label'] ?? null) ? $data['entity_label'] : null,
+                'minutes_elapsed' => is_numeric($data['minutes_elapsed'] ?? null) ? (int) $data['minutes_elapsed'] : null,
+                'options' => array_values(array_map(
+                    static fn (array $option): array => [
+                        'label' => is_string($option['label'] ?? null) ? $option['label'] : '',
+                        'value' => is_string($option['value'] ?? null) ? $option['value'] : '',
+                    ],
+                    array_filter(
+                        Arr::wrap($data['options'] ?? []),
+                        static fn (mixed $option): bool => is_array($option),
+                    ),
+                )),
+            ];
+        }
+
+        if ($kind === 'partial_notice') {
+            return [
+                'segments' => array_values(array_map(
+                    static fn (array $segment): array => [
+                        'text' => is_string($segment['text'] ?? null) ? $segment['text'] : '',
+                        'status' => in_array($segment['status'] ?? null, ['not_executed', 'failed', 'skipped'], true)
+                            ? $segment['status']
+                            : 'not_executed',
+                        'reason' => is_string($segment['reason'] ?? null) ? $segment['reason'] : '',
+                        'suggested_follow_up' => is_string($segment['suggested_follow_up'] ?? null)
+                            ? $segment['suggested_follow_up']
+                            : null,
+                    ],
+                    array_filter(
+                        Arr::wrap($data['segments'] ?? []),
+                        static fn (mixed $segment): bool => is_array($segment),
+                    ),
+                )),
+            ];
+        }
+
         if ($kind !== 'search_results') {
             return $data;
         }
@@ -730,6 +830,18 @@ class CopilotStructuredOutput
             if ($kind === 'clarification') {
                 return 'ambiguous';
             }
+
+            if ($kind === 'denied') {
+                return 'denied';
+            }
+
+            if ($kind === 'continuation_confirm') {
+                return 'continuation_confirm';
+            }
+
+            if ($kind === 'partial_notice') {
+                return 'partial';
+            }
         }
 
         return 'help';
@@ -745,6 +857,9 @@ class CopilotStructuredOutput
             'ambiguous' => 'ambiguous',
             'help' => 'help',
             'out_of_scope' => 'out_of_scope',
+            'denied' => 'denied',
+            'continuation_confirm' => 'continuation_confirm',
+            'partial' => 'read_search',
             default => null,
         };
     }

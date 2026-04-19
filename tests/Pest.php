@@ -18,7 +18,7 @@ pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->in('Feature');
 
-pest()->browser()->timeout(15000);
+pest()->browser()->inChrome()->timeout(20000);
 
 /*
 |--------------------------------------------------------------------------

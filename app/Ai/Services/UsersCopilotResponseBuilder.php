@@ -3,6 +3,7 @@
 namespace App\Ai\Services;
 
 use App\Ai\Support\CopilotConversationSnapshot;
+use App\Ai\Support\CopilotDenialCatalog;
 use App\Ai\Support\CopilotStructuredOutput;
 use App\Ai\Support\UsersCopilotDomainLexicon;
 use Illuminate\Support\Arr;
@@ -23,32 +24,82 @@ class UsersCopilotResponseBuilder
         string $responseSource = 'native_tools',
         ?int $subjectUserId = null,
     ): array {
+        // Fase 1a: rechazo explicito con intent 'denied' cuando el plan viene de
+        // matchSensitiveDenial (reason con prefijo "denied:"). Antes se emitia
+        // como 'ambiguous' mezclado con clarificaciones genuinas.
+        if ($this->isDeniedPlan($plan) && $this->isDeniedIntentEnabled()) {
+            return $this->withInterpretation(
+                $this->deniedPayload($plan, $snapshot, $responseSource, $subjectUserId),
+                $plan,
+                'deterministic_denial',
+            );
+        }
+
+        // Fase 1c: confirmacion de continuacion stale.
+        if (($plan['intent_family'] ?? null) === 'continuation_confirm'
+            && is_array($plan['clarification_state'] ?? null)
+            && $this->isStalenessConfirmationEnabled()) {
+            return $this->withInterpretation(
+                $this->continuationConfirmPayload($plan, $snapshot, $responseSource, $subjectUserId),
+                $plan,
+                'snapshot_stale',
+            );
+        }
+
         if (($plan['intent_family'] ?? null) === 'ambiguous' && is_array($plan['clarification_state'] ?? null)) {
-            return $this->clarificationPayload($plan, $snapshot, $responseSource, $subjectUserId);
+            return $this->withInterpretation(
+                $this->clarificationPayload($plan, $snapshot, $responseSource, $subjectUserId),
+                $plan,
+                'deterministic',
+            );
         }
 
         if (($executionResult['family'] ?? null) === 'mixed' && ($executionResult['outcome'] ?? null) === 'ok') {
-            return $this->mixedMetricsSearchPayload($plan, $snapshot, $executionResult, $responseSource, $subjectUserId);
+            return $this->withInterpretation(
+                $this->mixedMetricsSearchPayload($plan, $snapshot, $executionResult, $responseSource, $subjectUserId),
+                $plan,
+                'deterministic',
+            );
         }
 
         if (is_array($executionResult['cards'][0] ?? null) && (($executionResult['cards'][0]['kind'] ?? null) === 'notice')) {
-            return $this->noticePayload($plan, $snapshot, $executionResult, $responseSource, $subjectUserId);
+            return $this->withInterpretation(
+                $this->noticePayload($plan, $snapshot, $executionResult, $responseSource, $subjectUserId),
+                $plan,
+                'deterministic',
+            );
         }
 
         if (($executionResult['family'] ?? null) === 'aggregate' && ($executionResult['outcome'] ?? null) === 'ok') {
-            return $this->metricsPayload($plan, $snapshot, $executionResult, $responseSource, $subjectUserId);
+            return $this->withInterpretation(
+                $this->metricsPayload($plan, $snapshot, $executionResult, $responseSource, $subjectUserId),
+                $plan,
+                'deterministic',
+            );
         }
 
         if (($executionResult['family'] ?? null) === 'list' && ($executionResult['outcome'] ?? null) === 'ok') {
-            return $this->searchPayload($plan, $snapshot, $executionResult, $responseSource, $subjectUserId);
+            return $this->withInterpretation(
+                $this->searchPayload($plan, $snapshot, $executionResult, $responseSource, $subjectUserId),
+                $plan,
+                'deterministic',
+            );
         }
 
         if (($executionResult['family'] ?? null) === 'detail' && ($executionResult['outcome'] ?? null) === 'ok') {
-            return $this->detailPayload($plan, $snapshot, $executionResult, $responseSource, $subjectUserId);
+            return $this->withInterpretation(
+                $this->detailPayload($plan, $snapshot, $executionResult, $responseSource, $subjectUserId),
+                $plan,
+                'deterministic',
+            );
         }
 
         if (($executionResult['family'] ?? null) === 'action' && ($executionResult['outcome'] ?? null) === 'ok') {
-            return $this->actionProposalPayload($plan, $snapshot, $executionResult, $responseSource, $subjectUserId);
+            return $this->withInterpretation(
+                $this->actionProposalPayload($plan, $snapshot, $executionResult, $responseSource, $subjectUserId),
+                $plan,
+                'deterministic',
+            );
         }
 
         $payload = is_array($providerPayload) ? $providerPayload : [
@@ -82,14 +133,244 @@ class UsersCopilotResponseBuilder
             'diagnostics' => is_array($meta['diagnostics'] ?? null) ? $meta['diagnostics'] : null,
         ];
 
-        return CopilotStructuredOutput::reconstruct(
-            payload: $payload,
-            plan: $plan,
-            snapshot: $snapshot,
-            executionResult: $executionResult,
-            responseSource: $responseSource,
-            subjectUserId: $subjectUserId,
+        return $this->withInterpretation(
+            CopilotStructuredOutput::reconstruct(
+                payload: $payload,
+                plan: $plan,
+                snapshot: $snapshot,
+                executionResult: $executionResult,
+                responseSource: $responseSource,
+                subjectUserId: $subjectUserId,
+            ),
+            $plan,
+            'provider',
         );
+    }
+
+    // ── Fase 1a/1b/1c helpers ────────────────────────────────────────────
+
+    protected function isDeniedIntentEnabled(): bool
+    {
+        return (bool) config('ai-copilot.contracts.denied_intent', false);
+    }
+
+    protected function isInterpretationEnabled(): bool
+    {
+        return (bool) config('ai-copilot.contracts.interpretation', false);
+    }
+
+    protected function isStalenessConfirmationEnabled(): bool
+    {
+        return (bool) config('ai-copilot.contracts.staleness_confirmation', false);
+    }
+
+    /**
+     * @param  array<string, mixed>  $plan
+     */
+    protected function isDeniedPlan(array $plan): bool
+    {
+        $reason = (string) data_get($plan, 'clarification_state.reason', '');
+
+        return str_starts_with($reason, 'denied:');
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @param  array<string, mixed>  $plan
+     * @return array<string, mixed>
+     */
+    protected function withInterpretation(array $payload, array $plan, string $source): array
+    {
+        if (! $this->isInterpretationEnabled()) {
+            return $payload;
+        }
+
+        $payload['interpretation'] = $this->buildInterpretation($plan, $source);
+
+        return $payload;
+    }
+
+    /**
+     * @param  array<string, mixed>  $plan
+     * @return array<string, mixed>
+     */
+    protected function buildInterpretation(array $plan, string $source): array
+    {
+        $filters = array_filter(
+            is_array($plan['filters'] ?? null) ? $plan['filters'] : [],
+            static fn (mixed $value): bool => $value !== null && $value !== '' && $value !== [],
+        );
+
+        $entity = is_array($plan['resolved_entity'] ?? null)
+            ? [
+                'type' => (string) ($plan['resolved_entity']['type'] ?? 'user'),
+                'id' => is_numeric($plan['resolved_entity']['id'] ?? null) ? (int) $plan['resolved_entity']['id'] : null,
+                'label' => is_string($plan['resolved_entity']['label'] ?? null) ? $plan['resolved_entity']['label'] : null,
+            ]
+            : null;
+
+        $confidence = match (true) {
+            ($plan['classification_source'] ?? null) === 'llm_fallback' => 'low',
+            $source === 'provider' => 'medium',
+            default => 'high',
+        };
+
+        return [
+            'understood_intent' => $this->understoodIntentText($plan),
+            'applied_filters' => $filters,
+            'entity' => $entity,
+            'source' => $source,
+            'confidence' => $confidence,
+            'capability_key' => is_string($plan['capability_key'] ?? null) ? $plan['capability_key'] : null,
+            'intent_family' => is_string($plan['intent_family'] ?? null) ? $plan['intent_family'] : null,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $plan
+     */
+    protected function understoodIntentText(array $plan): string
+    {
+        $key = (string) ($plan['capability_key'] ?? '');
+
+        return match (true) {
+            str_starts_with($key, 'users.metrics.') => 'Consultar metricas agregadas de usuarios',
+            $key === 'users.search' => 'Buscar usuarios con los filtros indicados',
+            $key === 'users.mixed.metrics_search' => 'Combinar metricas y busqueda de usuarios',
+            $key === 'users.detail' => 'Mostrar detalle de un usuario',
+            str_starts_with($key, 'users.actions.') => 'Preparar una propuesta de accion sobre un usuario',
+            str_starts_with($key, 'users.explain.') => 'Explicar permisos o capacidades de un usuario',
+            $key === 'users.roles.catalog' => 'Listar el catalogo de roles',
+            $key === 'users.denied' => 'Solicitud rechazada por politica del copiloto',
+            $key === 'users.continuation.confirm' => 'Confirmar si continuar con el contexto previo',
+            $key === 'users.clarification' => 'Pedir una aclaracion para continuar',
+            $key === 'users.help.informational' => 'Responder una pregunta informativa del modulo',
+            $key === 'users.help.unknown' => 'Consulta no reconocida dentro del scope de usuarios',
+            $key === 'users.help' => 'Proporcionar ayuda general del copiloto de usuarios',
+            default => 'Solicitud interpretada por el copiloto',
+        };
+    }
+
+    /**
+     * Fase 1a: payload canonico para rechazos explicitos.
+     *
+     * @param  array<string, mixed>  $plan
+     * @return array<string, mixed>
+     */
+    protected function deniedPayload(
+        array $plan,
+        CopilotConversationSnapshot $snapshot,
+        string $responseSource,
+        ?int $subjectUserId,
+    ): array {
+        $clarification = is_array($plan['clarification_state'] ?? null) ? $plan['clarification_state'] : [];
+        $reason = is_string($clarification['reason'] ?? null) ? $clarification['reason'] : 'denied:unsupported_operation';
+        $category = CopilotDenialCatalog::categoryFromReason($reason);
+        $catalog = CopilotDenialCatalog::forCategory($category);
+        $question = is_string($clarification['question'] ?? null) && $clarification['question'] !== ''
+            ? $clarification['question']
+            : $catalog['message'];
+
+        return [
+            'answer' => $question,
+            'intent' => 'denied',
+            'cards' => [[
+                'kind' => 'denied',
+                'title' => 'No puedo procesar esta solicitud',
+                'summary' => $question,
+                'data' => [
+                    'category' => $category,
+                    'reason' => $reason,
+                    'message' => $question,
+                    'alternatives' => $catalog['alternatives'],
+                ],
+            ]],
+            'actions' => [],
+            'requires_confirmation' => false,
+            'references' => [],
+            'meta' => [
+                'module' => 'users',
+                'channel' => 'web',
+                'subject_user_id' => $subjectUserId,
+                'fallback' => false,
+                'capability_key' => 'users.denied',
+                'intent_family' => 'denied',
+                'conversation_state_version' => $snapshot->version(),
+                'response_source' => $responseSource,
+                'diagnostics' => [
+                    'planner' => 'users_request_planner',
+                    'denial_category' => $category,
+                    'denial_reason' => $reason,
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * Fase 1c: payload canonico para confirmar continuacion con snapshot stale.
+     *
+     * @param  array<string, mixed>  $plan
+     * @return array<string, mixed>
+     */
+    protected function continuationConfirmPayload(
+        array $plan,
+        CopilotConversationSnapshot $snapshot,
+        string $responseSource,
+        ?int $subjectUserId,
+    ): array {
+        $clarification = is_array($plan['clarification_state'] ?? null) ? $plan['clarification_state'] : [];
+        $question = is_string($clarification['question'] ?? null)
+            ? $clarification['question']
+            : 'Tu ultima interaccion tiene tiempo. Deseas continuar con el contexto previo o empezar de nuevo?';
+        $freshness = is_string($clarification['freshness'] ?? null) ? $clarification['freshness'] : 'stale';
+        $entityLabel = is_string($clarification['entity_label'] ?? null) ? $clarification['entity_label'] : null;
+        $minutesElapsed = is_numeric($clarification['minutes_elapsed'] ?? null) ? (int) $clarification['minutes_elapsed'] : null;
+        $options = array_values(array_filter(
+            Arr::wrap($clarification['options'] ?? []),
+            static fn (mixed $option): bool => is_array($option),
+        ));
+
+        if ($options === []) {
+            $options = [
+                ['label' => 'Continuar con el contexto previo', 'value' => 'confirm_continuation'],
+                ['label' => 'Empezar de nuevo', 'value' => 'start_fresh'],
+            ];
+        }
+
+        return [
+            'answer' => $question,
+            'intent' => 'continuation_confirm',
+            'cards' => [[
+                'kind' => 'continuation_confirm',
+                'title' => 'Confirmacion de continuacion',
+                'summary' => $question,
+                'data' => [
+                    'freshness' => $freshness,
+                    'question' => $question,
+                    'entity_label' => $entityLabel,
+                    'minutes_elapsed' => $minutesElapsed,
+                    'options' => $options,
+                ],
+            ]],
+            'actions' => [],
+            'requires_confirmation' => false,
+            'references' => [],
+            'meta' => [
+                'module' => 'users',
+                'channel' => 'web',
+                'subject_user_id' => $subjectUserId,
+                'fallback' => false,
+                'capability_key' => 'users.continuation.confirm',
+                'intent_family' => 'continuation_confirm',
+                'conversation_state_version' => $snapshot->version(),
+                'response_source' => $responseSource,
+                'diagnostics' => [
+                    'planner' => 'users_request_planner',
+                    'freshness' => $freshness,
+                    'minutes_elapsed' => $minutesElapsed,
+                ],
+            ],
+        ];
     }
 
     /**

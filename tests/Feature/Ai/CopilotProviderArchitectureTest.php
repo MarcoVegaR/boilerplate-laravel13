@@ -14,9 +14,6 @@ use Laravel\Ai\Responses\Data\Meta;
 use Laravel\Ai\Responses\Data\ToolResult;
 use Laravel\Ai\Responses\Data\Usage;
 use Laravel\Ai\Responses\StructuredAgentResponse;
-use Tests\TestCase;
-
-uses(TestCase::class);
 
 it('feature gates gemini to the text json adapter path while preserving provider specific schema metadata', function () {
     $profile = CopilotProviderProfile::forProvider('gemini');
@@ -325,6 +322,7 @@ it('defines the phase one capability catalog and snapshot boundary', function ()
         ->toBe([
             'snapshot' => json_encode($snapshot->toArray(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),
             'snapshot_version' => 1,
+            'last_turn_at' => null,
         ]);
 });
 
