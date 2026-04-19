@@ -18,7 +18,10 @@ class DatabaseSeeder extends Seeder
         $this->call(AuditModulePermissionsSeeder::class);
         $this->call(AiCopilotPermissionsSeeder::class);
 
-        if (! in_array((string) config('app.env'), ['local', 'testing'], true)) {
+        $shouldSeedFixtures = in_array((string) config('app.env'), ['local', 'testing'], true)
+            || config('app.allow_production_test_seed');
+
+        if (! $shouldSeedFixtures) {
             return;
         }
 

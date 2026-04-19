@@ -54,6 +54,8 @@ return [
 
     'url' => env('APP_URL', 'http://localhost'),
 
+    'allow_production_test_seed' => (bool) env('APP_ALLOW_PRODUCTION_TEST_SEED', false),
+
     /*
     |--------------------------------------------------------------------------
     | Application Timezone
