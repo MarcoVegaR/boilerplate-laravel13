@@ -60,7 +60,7 @@ it('verifies a writable scaffold after the documented manual integration steps',
         ->and($indexPage)->toContain("import { HelpLink } from '@/components/help/help-link';")
         ->and($indexPage)->toContain("<HelpLink category=\"{$module}\" slug=\"manage-{$resource}\" />")
         ->and($createPage)->toContain("import { HelpLink } from '@/components/help/help-link';")
-        ->and($createPage)->toContain("<HelpLink category=\"{$module}\" slug=\"create-".Str::singular($resource)."\" />")
+        ->and($createPage)->toContain("<HelpLink category=\"{$module}\" slug=\"create-".Str::singular($resource).'" />')
         ->and(file_exists($helpArticleIndexPath))->toBeTrue()
         ->and(file_exists($helpArticleCreatePath))->toBeTrue()
         ->and($helpArticleIndex)->toContain('title: Gestionar')
@@ -144,12 +144,7 @@ function integrateGeneratedModule(string $module, string $resource, string $mode
     $callLine = "        \$this->call({$seederClass}::class);";
 
     if (! str_contains($seederContents, $callLine)) {
-        $updatedSeederContents = preg_replace(
-            '/^\s*if \(! in_array\(\(string\) config\(\'app\.env\'\), \[\'local\', \'testing\'\], true\)\) \{$/m',
-            $callLine.PHP_EOL.PHP_EOL.'        if (! in_array((string) config(\'app.env\'), [\'local\', \'testing\'], true)) {',
-            $seederContents,
-            1,
-        );
+        $updatedSeederContents = insertGeneratedSeederCall($seederContents, $callLine);
 
         if (is_string($updatedSeederContents)) {
             $seederContents = $updatedSeederContents;
@@ -161,6 +156,16 @@ function integrateGeneratedModule(string $module, string $resource, string $mode
 
         $filesystem->put($seederPath, $seederContents);
     }
+}
+
+function insertGeneratedSeederCall(string $seederContents, string $callLine): ?string
+{
+    return preg_replace(
+        '/(^\s*\$this->call\([^\n]+\);\R(?:\s*\$this->call\([^\n]+\);\R)*)/m',
+        "$1{$callLine}".PHP_EOL,
+        $seederContents,
+        1,
+    );
 }
 
 function generatedPermissionsSeederClass(string $module, string $resource): string
