@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\Role;
+use Faker\Generator;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -22,10 +23,12 @@ class RoleFactory extends Factory
      */
     public function definition(): array
     {
+        $faker = app(Generator::class);
+
         return [
-            'name' => $this->faker->unique()->slug(2),
-            'display_name' => $this->faker->words(2, true),
-            'description' => $this->faker->optional()->sentence(),
+            'name' => $faker->unique()->slug(2),
+            'display_name' => $faker->words(2, true),
+            'description' => $faker->optional()->sentence(),
             'guard_name' => 'web',
             'is_active' => true,
         ];
