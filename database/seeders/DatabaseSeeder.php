@@ -36,7 +36,10 @@ class DatabaseSeeder extends Seeder
         // Assign super-admin role to local admin user (idempotent)
         $admin->assignRole('super-admin');
 
-        if (! in_array((string) config('app.env'), ['local', 'testing'], true)) {
+        $shouldSeedFullFixtures = in_array((string) config('app.env'), ['local', 'testing'], true)
+            || config('app.allow_production_test_seed');
+
+        if (! $shouldSeedFullFixtures) {
             return;
         }
 
