@@ -3,7 +3,31 @@
 namespace App\Ai\Services;
 
 use App\Ai\Agents\System\CopilotIntentClassifierAgent;
+use App\Ai\Services\Planning\PlannerStage;
+use App\Ai\Services\Planning\PlanningContext;
+use App\Ai\Services\Planning\PlanningPipeline;
+use App\Ai\Services\Planning\Stages\ActionExplanationStage;
+use App\Ai\Services\Planning\Stages\ActionProposalStage;
+use App\Ai\Services\Planning\Stages\BulkActionDenialStage;
+use App\Ai\Services\Planning\Stages\ConfiguredMatrixStage;
+use App\Ai\Services\Planning\Stages\ConversationContinuationStage;
+use App\Ai\Services\Planning\Stages\DenialStage;
+use App\Ai\Services\Planning\Stages\EntityActionFallbackStage;
+use App\Ai\Services\Planning\Stages\EntityPlanFallbackStage;
+use App\Ai\Services\Planning\Stages\EntityResolutionStage;
+use App\Ai\Services\Planning\Stages\FollowUpStage;
+use App\Ai\Services\Planning\Stages\HelpUnknownStage;
+use App\Ai\Services\Planning\Stages\InformationalHelpStage;
+use App\Ai\Services\Planning\Stages\MetricsStage;
+use App\Ai\Services\Planning\Stages\MixedMetricsSearchStage;
+use App\Ai\Services\Planning\Stages\PendingClarificationStage;
+use App\Ai\Services\Planning\Stages\PermissionSearchStage;
+use App\Ai\Services\Planning\Stages\RolesCatalogStage;
+use App\Ai\Services\Planning\Stages\SearchStage;
+use App\Ai\Services\Planning\Stages\StalenessConfirmationStage;
+use App\Ai\Services\Planning\Stages\SubjectUserStage;
 use App\Ai\Support\CopilotConversationSnapshot;
+use App\Ai\Support\CopilotPlannerTelemetry;
 use App\Ai\Support\UsersCopilotDomainLexicon;
 use App\Models\User;
 use Illuminate\Support\Arr;
@@ -14,6 +38,19 @@ use Illuminate\Support\Str;
 
 class UsersCopilotRequestPlanner
 {
+    /**
+     * Fase 2 estructural: pipeline de stages inyectable. Si es null, se
+     * construye el pipeline canonico en `defaultPipeline()`. Esto permite
+     * a tests y evaluadores externos sustituir el orden o cualquier stage
+     * individual sin tocar el planner.
+     */
+    protected ?PlanningPipeline $pipeline = null;
+
+    public function __construct(?PlanningPipeline $pipeline = null)
+    {
+        $this->pipeline = $pipeline;
+    }
+
     /**
      * @return array{
      *   request_normalization: string,
@@ -28,144 +65,111 @@ class UsersCopilotRequestPlanner
      */
     public function plan(string $prompt, CopilotConversationSnapshot $snapshot, ?User $subjectUser = null): array
     {
+        $startedAt = hrtime(true);
         $normalized = $this->normalizePrompt($prompt);
+        $originalFreshness = $snapshot->freshness();
 
         // Fase 1c: staleness gate. Si el prompt requiere contexto previo pero
         // el snapshot esta stale, pedir confirmacion antes de continuar. Si
         // esta expired, se trata como fresh (snapshot descartado).
         $snapshot = $this->applyFreshnessGate($snapshot);
 
-        if ($denial = $this->matchSensitiveDenial($normalized)) {
-            return $denial;
+        $context = new PlanningContext(
+            originalPrompt: $prompt,
+            normalized: $normalized,
+            snapshot: $snapshot,
+            subjectUser: $subjectUser,
+            originalFreshness: $originalFreshness,
+        );
+
+        $plan = $this->pipeline()->handle($context, $this);
+
+        // El HelpUnknownStage es terminal, asi que esto nunca deberia pasar,
+        // pero defensivamente devolvemos un unknown fallback.
+        if ($plan === null) {
+            $plan = $this->helpUnknownPlan($normalized);
+            $plan['_pipeline_stage'] = 'fallback_guard';
         }
 
-        // Fase 1c: gate global ANTES del matrix y ramas subsiguientes. Todos
-        // los caminos deicticos (continua/cuantos son/solo los/desactivalo)
-        // quedan gateados uniformemente.
-        if ($this->shouldRequireContinuationConfirmation($normalized, $snapshot)) {
-            return $this->continuationConfirmPlan($normalized, $snapshot);
+        $pipelineStage = is_string($plan['_pipeline_stage'] ?? null) ? $plan['_pipeline_stage'] : null;
+        unset($plan['_pipeline_stage']);
+
+        // Fase 2c: telemetria estructurada de la resolucion ganadora.
+        $durationMs = (int) ((hrtime(true) - $startedAt) / 1_000_000);
+        CopilotPlannerTelemetry::resolved(
+            stage: $pipelineStage ?? $this->inferStageFromPlan($plan),
+            capabilityKey: (string) ($plan['capability_key'] ?? 'users.help.unknown'),
+            intentFamily: (string) ($plan['intent_family'] ?? 'help'),
+            normalizedPrompt: $normalized,
+            extra: [
+                'snapshot_freshness' => $originalFreshness,
+                'has_snapshot_context' => $snapshot->hasContext(),
+                'duration_ms' => $durationMs,
+                'clarification_reason' => data_get($plan, 'clarification_state.reason'),
+                'llm_rescued' => isset($plan['classification_source']) && $plan['classification_source'] === 'llm_fallback',
+                'pipeline_stage' => $pipelineStage,
+            ],
+        );
+
+        return $plan;
+    }
+
+    /**
+     * Construye el pipeline canonico. Precedencia identica a la version
+     * anterior monolitica, ahora expresada declarativamente. Cada stage
+     * encapsula UNA rama de decision.
+     */
+    protected function pipeline(): PlanningPipeline
+    {
+        if ($this->pipeline !== null) {
+            return $this->pipeline;
         }
 
-        if ($this->looksLikeConversationContinuation($normalized)) {
-            return $this->resolveContinuation($normalized, $snapshot);
-        }
+        return $this->pipeline = new PlanningPipeline([
+            new DenialStage,
+            new StalenessConfirmationStage,
+            new ConversationContinuationStage,
+            new InformationalHelpStage,
+            new PendingClarificationStage,
+            new ConfiguredMatrixStage,
+            new ActionExplanationStage,
+            new EntityResolutionStage, // ← escribe $context->entityPlan
+            new FollowUpStage,
+            new MixedMetricsSearchStage,
+            new RolesCatalogStage,
+            new MetricsStage,
+            new PermissionSearchStage,
+            new BulkActionDenialStage,
+            new SearchStage,
+            new EntityActionFallbackStage, // ← lee $context->entityPlan
+            new EntityPlanFallbackStage,   // ← lee $context->entityPlan
+            new SubjectUserStage,
+            new ActionProposalStage,
+            new HelpUnknownStage,          // ← terminal, siempre produce plan
+        ]);
+    }
 
-        if ($this->looksLikeInformationalPrompt($normalized)) {
-            return $this->helpPlan($normalized);
-        }
+    /**
+     * Permite reemplazar el pipeline en runtime (tests, eval harness).
+     */
+    public function setPipeline(PlanningPipeline $pipeline): void
+    {
+        $this->pipeline = $pipeline;
+    }
 
-        if ($clarificationResolution = $this->resolvePendingClarification($normalized, $snapshot)) {
-            return $clarificationResolution;
-        }
-
-        if ($matrixPlan = $this->matchConfiguredMatrix($normalized, $snapshot)) {
-            return $matrixPlan;
-        }
-
-        if ($actionExplainPlan = $this->matchActionExplanationIntent($normalized)) {
-            return $actionExplainPlan;
-        }
-
-        // Resolve entity-driven plan once and cache result to avoid double DB queries
-        $entityPlan = null;
-        if ($subjectUser === null && ! $this->isCreateUserProposal($normalized)) {
-            $entityPlan = $this->resolveEntityDrivenPlan($normalized, $snapshot);
-        }
-
-        if ($entityPlan !== null
-            && ! $this->looksLikeExplicitCollectionSearch($normalized)
-            && ! $this->looksLikeActionExplanationPrompt($normalized)
-            && $this->looksLikeExplicitDetailPrompt($normalized)) {
-            return $entityPlan;
-        }
-
-        if ($followUpPlan = $this->resolveFollowUp($normalized, $snapshot)) {
-            return $followUpPlan;
-        }
-
-        if ($mixedPlan = $this->matchMixedMetricsSearchIntent($normalized)) {
-            return $mixedPlan;
-        }
-
-        if ($rolesCatalogPlan = $this->matchRolesCatalogIntent($normalized)) {
-            return $rolesCatalogPlan;
-        }
-
-        if ($metricsPlan = $this->matchMetricsIntent($normalized)) {
-            return $metricsPlan;
-        }
-
-        if ($permissionSearchPlan = $this->matchPermissionSearchIntent($normalized)) {
-            return $permissionSearchPlan;
-        }
-
-        if ($this->looksLikeActionProposal($normalized) && $this->looksLikeBulkAction($normalized)) {
-            return $this->clarificationPlan(
-                normalized: $normalized,
-                reason: 'denied:unsupported_bulk',
-                question: 'No puedo ejecutar acciones masivas desde el copiloto. Indica un usuario especifico para continuar.',
-            );
-        }
-
-        if ($this->looksLikeSearch($normalized)) {
-            return $this->searchPlan($normalized);
-        }
-
-        // Si hay entityPlan pero el prompt parece una acción, procesar como acción
-        if ($entityPlan !== null && $this->looksLikeActionProposal($normalized)) {
-            $resolvedUserId = $entityPlan['resolved_entity']['id'] ?? null;
-            if ($resolvedUserId !== null) {
-                $resolvedUser = User::query()->find($resolvedUserId);
-                if ($resolvedUser instanceof User) {
-                    return $this->actionPlan($normalized, $resolvedUser);
-                }
-            }
-
-            // Si entityPlan no resolvió usuario pero el snapshot tiene un único resultado, usarlo
-            if ($resolvedUserId === null && $snapshot->singleResultUserId() !== null) {
-                $snapshotUser = User::query()->find($snapshot->singleResultUserId());
-                if ($snapshotUser instanceof User) {
-                    return $this->actionPlan($normalized, $snapshotUser);
-                }
-            }
-        }
-
-        if ($entityPlan !== null) {
-            return $entityPlan;
-        }
-
-        if ($subjectUser instanceof User && ! $this->looksLikeActionProposal($normalized)) {
-            if ($this->looksLikeCapabilitiesSummaryPrompt($normalized)) {
-                return $this->capabilitiesSummaryPlan($normalized, $subjectUser);
-            }
-
-            if ($permission = UsersCopilotDomainLexicon::permissionNameForIntent($normalized)) {
-                return $this->permissionExplainPlan($normalized, $subjectUser, $permission);
-            }
-
-            return $this->detailPlan($normalized, $subjectUser);
-        }
-
-        if ($this->looksLikeActionProposal($normalized)) {
-            $actionSubject = $subjectUser;
-            if (! $actionSubject instanceof User && $snapshot->singleResultUserId() !== null) {
-                $actionSubject = User::query()->find($snapshot->singleResultUserId());
-            }
-
-            return $this->actionPlan($normalized, $actionSubject);
-        }
-
-        // Fallback determinístico - antes de retornar, intentar rescate con LLM
-        $fallbackPlan = $this->helpPlan($normalized);
-
-        return $this->attemptLLMRescue($normalized, $fallbackPlan, $snapshot, $subjectUser);
+    /**
+     * @return list<string>
+     */
+    public function stageNames(): array
+    {
+        return $this->pipeline()->stageNames();
     }
 
     /**
      * Intenta rescatar un fallback usando el clasificador LLM.
      * Solo se invoca si el clasificador está habilitado y la categoría es rescatable.
      */
-    protected function attemptLLMRescue(string $normalized, array $fallbackPlan, CopilotConversationSnapshot $snapshot, ?User $subjectUser): array
+    public function attemptLLMRescue(string $normalized, array $fallbackPlan, CopilotConversationSnapshot $snapshot, ?User $subjectUser): array
     {
         // Verificar si el clasificador está habilitado
         if (! config('ai-copilot.intent_classifier.enabled', false)) {
@@ -461,7 +465,7 @@ class UsersCopilotRequestPlanner
     /**
      * @return array<string, mixed>|null
      */
-    protected function matchConfiguredMatrix(string $normalized, CopilotConversationSnapshot $snapshot): ?array
+    public function matchConfiguredMatrix(string $normalized, CopilotConversationSnapshot $snapshot): ?array
     {
         foreach (['deterministic', 'extended'] as $matrix) {
             foreach (Arr::wrap(config("ai-copilot.planning.matrices.{$matrix}")) as $case) {
@@ -507,7 +511,7 @@ class UsersCopilotRequestPlanner
     /**
      * @return array<string, mixed>|null
      */
-    protected function resolveFollowUp(string $normalized, CopilotConversationSnapshot $snapshot): ?array
+    public function resolveFollowUp(string $normalized, CopilotConversationSnapshot $snapshot): ?array
     {
         if (! $snapshot->hasContext()) {
             return null;
@@ -531,7 +535,7 @@ class UsersCopilotRequestPlanner
     /**
      * @return array<string, mixed>|null
      */
-    protected function resolvePendingClarification(string $normalized, CopilotConversationSnapshot $snapshot): ?array
+    public function resolvePendingClarification(string $normalized, CopilotConversationSnapshot $snapshot): ?array
     {
         $clarification = $snapshot->pendingClarification();
 
@@ -814,7 +818,7 @@ class UsersCopilotRequestPlanner
     /**
      * @return array<string, mixed>|null
      */
-    protected function resolveEntityDrivenPlan(string $normalized, CopilotConversationSnapshot $snapshot): ?array
+    public function resolveEntityDrivenPlan(string $normalized, CopilotConversationSnapshot $snapshot): ?array
     {
         if (! $this->looksLikeUserTargetingPrompt($normalized)) {
             return null;
@@ -976,7 +980,7 @@ class UsersCopilotRequestPlanner
     /**
      * @return array<string, mixed>|null
      */
-    protected function matchMetricsIntent(string $normalized): ?array
+    public function matchMetricsIntent(string $normalized): ?array
     {
         if ($this->extractAccessProfileFilter($normalized) === 'administrative_access'
             && preg_match('/\b(cantidad|cuantos|cuantas|hay)\b/u', $normalized) === 1
@@ -1020,7 +1024,7 @@ class UsersCopilotRequestPlanner
     /**
      * @return array<string, mixed>|null
      */
-    protected function matchPermissionSearchIntent(string $normalized): ?array
+    public function matchPermissionSearchIntent(string $normalized): ?array
     {
         $permission = UsersCopilotDomainLexicon::permissionNameForIntent($normalized);
 
@@ -1042,7 +1046,7 @@ class UsersCopilotRequestPlanner
     /**
      * @return array<string, mixed>|null
      */
-    protected function matchActionExplanationIntent(string $normalized): ?array
+    public function matchActionExplanationIntent(string $normalized): ?array
     {
         if (! str_contains($normalized, 'por que')) {
             return null;
@@ -1088,13 +1092,13 @@ class UsersCopilotRequestPlanner
         ];
     }
 
-    protected function looksLikeActionExplanationPrompt(string $normalized): bool
+    public function looksLikeActionExplanationPrompt(string $normalized): bool
     {
         return str_contains($normalized, 'por que')
             && $this->extractActionTypeForExplanation($normalized) !== null;
     }
 
-    protected function looksLikeCapabilitiesSummaryPrompt(string $normalized): bool
+    public function looksLikeCapabilitiesSummaryPrompt(string $normalized): bool
     {
         return preg_match('/\b(que\s+puede\s+hacer|que\s+no\s+puede\s+hacer)\b/u', $normalized) === 1;
     }
@@ -1102,7 +1106,7 @@ class UsersCopilotRequestPlanner
     /**
      * @return array<string, mixed>|null
      */
-    protected function matchRolesCatalogIntent(string $normalized): ?array
+    public function matchRolesCatalogIntent(string $normalized): ?array
     {
         if (preg_match('/\b(cuales|que)\s+roles\s+(existen|hay)\b/u', $normalized) === 1
             || preg_match('/\b(lista|listar|listame|muestra|mostrar|dame)\s+los\s+roles\b/u', $normalized) === 1) {
@@ -1115,7 +1119,7 @@ class UsersCopilotRequestPlanner
     /**
      * @return array<string, mixed>|null
      */
-    protected function matchMixedMetricsSearchIntent(string $normalized): ?array
+    public function matchMixedMetricsSearchIntent(string $normalized): ?array
     {
         if (! $this->looksLikeExplicitCollectionSearch($normalized)) {
             return null;
@@ -1242,7 +1246,7 @@ class UsersCopilotRequestPlanner
         ];
     }
 
-    protected function looksLikeSearch(string $normalized): bool
+    public function looksLikeSearch(string $normalized): bool
     {
         if ($this->looksLikeExplicitDetailPrompt($normalized) && ! $this->looksLikeExplicitCollectionSearch($normalized)) {
             return false;
@@ -1265,7 +1269,7 @@ class UsersCopilotRequestPlanner
     /**
      * @return array<string, mixed>
      */
-    protected function searchPlan(string $normalized): array
+    public function searchPlan(string $normalized): array
     {
         $filters = $this->emptyFilters();
 
@@ -1407,7 +1411,7 @@ class UsersCopilotRequestPlanner
     /**
      * @return array<string, mixed>
      */
-    protected function detailPlan(string $normalized, User $subjectUser): array
+    public function detailPlan(string $normalized, User $subjectUser): array
     {
         return [
             'request_normalization' => $normalized,
@@ -1431,7 +1435,7 @@ class UsersCopilotRequestPlanner
     /**
      * @return array<string, mixed>
      */
-    protected function permissionExplainPlan(string $normalized, User $subjectUser, string $permission): array
+    public function permissionExplainPlan(string $normalized, User $subjectUser, string $permission): array
     {
         return [
             'request_normalization' => $normalized,
@@ -1455,7 +1459,7 @@ class UsersCopilotRequestPlanner
     /**
      * @return array<string, mixed>
      */
-    protected function capabilitiesSummaryPlan(string $normalized, User $subjectUser): array
+    public function capabilitiesSummaryPlan(string $normalized, User $subjectUser): array
     {
         return [
             'request_normalization' => $normalized,
@@ -1476,7 +1480,7 @@ class UsersCopilotRequestPlanner
     /**
      * @return array<string, mixed>
      */
-    protected function actionPlan(string $normalized, ?User $subjectUser): array
+    public function actionPlan(string $normalized, ?User $subjectUser): array
     {
         $capabilityKey = match (true) {
             str_contains($normalized, 'desactiv') => 'users.actions.deactivate',
@@ -1521,7 +1525,8 @@ class UsersCopilotRequestPlanner
         }
 
         if ($capabilityKey === null) {
-            return $this->helpPlan($normalized);
+            // Fase 1d: capability desconocida tras normalizacion -> unknown.
+            return $this->helpUnknownPlan($normalized);
         }
 
         return [
@@ -1544,7 +1549,7 @@ class UsersCopilotRequestPlanner
      * @param  list<string>  $missingSlots
      * @return array<string, mixed>
      */
-    protected function clarificationPlan(string $normalized, string $reason, string $question, array $missingSlots = []): array
+    public function clarificationPlan(string $normalized, string $reason, string $question, array $missingSlots = []): array
     {
         $this->logFallback($normalized, 'users.clarification', 'ambiguous', $reason);
 
@@ -1594,18 +1599,67 @@ class UsersCopilotRequestPlanner
      */
     protected function helpPlan(string $normalized): array
     {
-        $this->logFallback($normalized, 'users.help', 'help', null);
+        // Conservado como alias legacy: redirige al unknown plan para mantener
+        // compatibilidad con llamadas historicas que no han migrado aun.
+        return $this->helpUnknownPlan($normalized);
+    }
+
+    /**
+     * Fase 1d: plan canonico para prompts informativos reconocidos (ej:
+     * "como funciona 2fa", "que puedo hacer"). Emite `users.help.informational`
+     * cuando el flag `help_unknown_split` esta activo.
+     *
+     * @return array<string, mixed>
+     */
+    public function helpInformationalPlan(string $normalized): array
+    {
+        $capabilityKey = $this->isHelpUnknownSplitEnabled()
+            ? 'users.help.informational'
+            : 'users.help';
+
+        $this->logFallback($normalized, $capabilityKey, 'help', null);
 
         return [
             'request_normalization' => $normalized,
             'intent_family' => 'help',
-            'capability_key' => 'users.help',
+            'capability_key' => $capabilityKey,
             'filters' => $this->emptyFilters(),
             'resolved_entity' => null,
             'missing_slots' => [],
             'clarification_state' => null,
             'proposal_vs_execute' => 'none',
         ];
+    }
+
+    /**
+     * Fase 1d: plan canonico para prompts fuera del catalogo. Emite
+     * `users.help.unknown` cuando el flag `help_unknown_split` esta activo.
+     *
+     * @return array<string, mixed>
+     */
+    public function helpUnknownPlan(string $normalized): array
+    {
+        $capabilityKey = $this->isHelpUnknownSplitEnabled()
+            ? 'users.help.unknown'
+            : 'users.help';
+
+        $this->logFallback($normalized, $capabilityKey, 'help', null);
+
+        return [
+            'request_normalization' => $normalized,
+            'intent_family' => 'help',
+            'capability_key' => $capabilityKey,
+            'filters' => $this->emptyFilters(),
+            'resolved_entity' => null,
+            'missing_slots' => [],
+            'clarification_state' => null,
+            'proposal_vs_execute' => 'none',
+        ];
+    }
+
+    protected function isHelpUnknownSplitEnabled(): bool
+    {
+        return (bool) config('ai-copilot.contracts.help_unknown_split', false);
     }
 
     /**
@@ -1746,7 +1800,17 @@ class UsersCopilotRequestPlanner
             return $snapshot;
         }
 
-        if ($snapshot->freshness() === CopilotConversationSnapshot::FRESHNESS_EXPIRED) {
+        $freshness = $snapshot->freshness();
+
+        // Fase 2c: telemetria del gate.
+        CopilotPlannerTelemetry::stalenessDecision(
+            freshness: $freshness,
+            hasContext: $snapshot->hasContext(),
+            minutesElapsed: $snapshot->minutesSinceLastTurn(),
+            requiresConfirmation: $freshness === CopilotConversationSnapshot::FRESHNESS_STALE,
+        );
+
+        if ($freshness === CopilotConversationSnapshot::FRESHNESS_EXPIRED) {
             return CopilotConversationSnapshot::empty();
         }
 
@@ -1758,7 +1822,7 @@ class UsersCopilotRequestPlanner
      * snapshot esta stale. En ese caso se emite un plan `continuation.confirm`
      * para pedir confirmacion antes de reusar el contexto.
      */
-    protected function shouldRequireContinuationConfirmation(string $normalized, CopilotConversationSnapshot $snapshot): bool
+    public function shouldRequireContinuationConfirmation(string $normalized, CopilotConversationSnapshot $snapshot): bool
     {
         if (! (bool) config('ai-copilot.contracts.staleness_confirmation', false)) {
             return false;
@@ -1783,7 +1847,7 @@ class UsersCopilotRequestPlanner
      *
      * @return array<string, mixed>
      */
-    protected function continuationConfirmPlan(string $normalized, CopilotConversationSnapshot $snapshot): array
+    public function continuationConfirmPlan(string $normalized, CopilotConversationSnapshot $snapshot): array
     {
         $entity = $snapshot->resolvedEntity();
         $entityLabel = null;
@@ -1826,7 +1890,7 @@ class UsersCopilotRequestPlanner
      *
      * @return array<string, mixed>|null
      */
-    protected function matchSensitiveDenial(string $normalized): ?array
+    public function matchSensitiveDenial(string $normalized): ?array
     {
         // Exclude informational/educational contexts — "como funciona el 2fa", "como cambiar el email"
         if (preg_match('/\b(como\s+funciona|que\s+es|que\s+significa|como\s+se\s+configura|como\s+se\s+activa|como\s+habilitar|como\s+cambiar)\b/u', $normalized) === 1) {
@@ -1872,7 +1936,7 @@ class UsersCopilotRequestPlanner
      *
      * @return array<string, mixed>
      */
-    protected function resolveContinuation(string $normalized, CopilotConversationSnapshot $snapshot): array
+    public function resolveContinuation(string $normalized, CopilotConversationSnapshot $snapshot): array
     {
         if (! $snapshot->hasContext()) {
             return $this->clarificationPlan(
@@ -1915,7 +1979,7 @@ class UsersCopilotRequestPlanner
         );
     }
 
-    protected function looksLikeBulkAction(string $normalized): bool
+    public function looksLikeBulkAction(string $normalized): bool
     {
         return preg_match('/\b(a\s+todos|todos\s+los|masivamente|en\s+lote|de\s+una\s+vez|a\s+cada\s+uno)\b/u', $normalized) === 1;
     }
@@ -1990,18 +2054,18 @@ class UsersCopilotRequestPlanner
         return $this->searchTokens($normalized) !== [];
     }
 
-    protected function looksLikeActionProposal(string $normalized): bool
+    public function looksLikeActionProposal(string $normalized): bool
     {
         return preg_match('/\b(propon|prepara|desactiva|desactivar|desactivalo|activa|activar|reactiva|reactivar|reactivalo|reset|restablece|restablecer|restablecele|crea|crear|alta)\b/u', $normalized) === 1
             || (str_contains($normalized, 'restablecimiento') && preg_match('/\b(necesito|quiero|puedo|ayudame|enviar|envia)\b/u', $normalized) === 1);
     }
 
-    protected function looksLikeConversationContinuation(string $normalized): bool
+    public function looksLikeConversationContinuation(string $normalized): bool
     {
         return preg_match('/\b(continua|continua con|sigue|seguir|amplia|amplia esto|mas detalle|mas detalles)\b/u', $normalized) === 1;
     }
 
-    protected function looksLikeInformationalPrompt(string $normalized): bool
+    public function looksLikeInformationalPrompt(string $normalized): bool
     {
         return preg_match('/\b(como\s+(?:revisar|funciona|puedo|hago|se\s+hace)|explica\s+como|que\s+puedo\s+hacer|que\s+significa)\b/u', $normalized) === 1
             && preg_match('/\b(?:de\s+un\s+usuario|de\s+los\s+usuarios|del\s+usuario|un\s+usuario)\b/u', $normalized) === 1;
@@ -2040,7 +2104,7 @@ class UsersCopilotRequestPlanner
         return preg_match('/\b(revisa|resume|explica|detalle|estado|acceso|usuario|permisos|roles|puede|quien)\b/u', $normalized) === 1;
     }
 
-    protected function looksLikeExplicitDetailPrompt(string $normalized): bool
+    public function looksLikeExplicitDetailPrompt(string $normalized): bool
     {
         if ($this->extractEmailFromText($normalized) !== null
             && preg_match('/\b(que\s+permisos\s+tiene|que\s+roles?\s+tiene|que\s+puede\s+hacer|que\s+rol(?:es)?\s+tiene)\b/u', $normalized) === 1) {
@@ -2060,7 +2124,7 @@ class UsersCopilotRequestPlanner
             && (preg_match('/\busuario\b/u', $normalized) === 1 || $this->extractEmailFromText($normalized) !== null);
     }
 
-    protected function looksLikeExplicitCollectionSearch(string $normalized): bool
+    public function looksLikeExplicitCollectionSearch(string $normalized): bool
     {
         return preg_match('/\b(busca|buscar|lista|listar|listame|muestra|mostrar|encuentra|encontrar|dame)\b.*\busuarios?\b/u', $normalized) === 1
             || preg_match('/\b(que\s+usuarios|quienes\s+son\s+los\s+usuarios|quienes\s+son)\b/u', $normalized) === 1
@@ -2436,7 +2500,7 @@ class UsersCopilotRequestPlanner
         };
     }
 
-    protected function isCreateUserProposal(string $normalized): bool
+    public function isCreateUserProposal(string $normalized): bool
     {
         return str_contains($normalized, 'crear usuario') || str_contains($normalized, 'alta');
     }
@@ -2577,5 +2641,92 @@ class UsersCopilotRequestPlanner
         }
 
         return null;
+    }
+
+    /**
+     * Fase 2c: infiere el stage ganador a partir del plan final. Util para
+     * telemetria sin tener que reescribir cada rama del planner.
+     *
+     * @param  array<string, mixed>  $plan
+     */
+    protected function inferStageFromPlan(array $plan): string
+    {
+        $capabilityKey = (string) ($plan['capability_key'] ?? '');
+        $reason = (string) data_get($plan, 'clarification_state.reason', '');
+        $classificationSource = $plan['classification_source'] ?? null;
+
+        // Denial se detecta por reason prefix 'denied:'
+        if (str_starts_with($reason, 'denied:')) {
+            return 'denial';
+        }
+
+        // Fase 1c: continuation confirm
+        if ($capabilityKey === 'users.continuation.confirm') {
+            return 'staleness_confirmation';
+        }
+
+        if ($reason === 'snapshot_stale') {
+            return 'staleness_confirmation';
+        }
+
+        // Clarificacion explicita con razones concretas
+        if ($capabilityKey === 'users.clarification') {
+            return match ($reason) {
+                'missing_target' => 'clarification_missing_target',
+                'missing_context' => 'clarification_missing_context',
+                'missing_entity' => 'clarification_missing_entity',
+                'ambiguous_target' => 'clarification_ambiguous_target',
+                'weak_search' => 'clarification_weak_search',
+                default => 'clarification_other',
+            };
+        }
+
+        // Rescate LLM
+        if ($classificationSource === 'llm_fallback') {
+            return 'llm_rescue';
+        }
+
+        // Capability-based stage inference (reutiliza convenciones del catalogo)
+        if ($capabilityKey === 'users.help.informational') {
+            return 'help_informational';
+        }
+
+        if ($capabilityKey === 'users.help.unknown' || $capabilityKey === 'users.help') {
+            return 'help_unknown';
+        }
+
+        if ($capabilityKey === 'users.mixed.metrics_search') {
+            return 'mixed_metrics_search';
+        }
+
+        if ($capabilityKey === 'users.roles.catalog') {
+            return 'roles_catalog';
+        }
+
+        if ($capabilityKey === 'users.snapshot.result_count') {
+            return 'follow_up_count';
+        }
+
+        if (str_starts_with($capabilityKey, 'users.metrics.')) {
+            return 'metrics';
+        }
+
+        if (str_starts_with($capabilityKey, 'users.explain.')) {
+            return 'explain';
+        }
+
+        if (str_starts_with($capabilityKey, 'users.actions.')) {
+            return 'action_proposal';
+        }
+
+        if ($capabilityKey === 'users.search') {
+            return 'search';
+        }
+
+        if ($capabilityKey === 'users.detail') {
+            return 'detail';
+        }
+
+        return 'unknown';
     }
 }

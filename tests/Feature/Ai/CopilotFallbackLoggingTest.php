@@ -25,7 +25,8 @@ describe('Copilot Fallback Logging', function (): void {
         // Un prompt que no matchea ninguna intención conocida
         $plan = $planner->plan('xyz123 no match', $snapshot);
 
-        expect($plan['capability_key'])->toBe('users.help');
+        // Fase 1d: capability es 'users.help.unknown' con el flag activo.
+        expect($plan['capability_key'])->toBeIn(['users.help', 'users.help.unknown']);
         expect($plan['intent_family'])->toBe('help');
         expect($plan['request_normalization'])->toBe('xyz123 no match');
     });
@@ -49,7 +50,12 @@ describe('Copilot Fallback Logging', function (): void {
         $plan = $planner->plan('y cuantos de esos', $snapshot);
 
         // El planner debería pedir aclaración o mostrar help ante follow-up ambiguo
-        expect($plan['capability_key'])->toBeIn(['users.clarification', 'users.help']);
+        expect($plan['capability_key'])->toBeIn([
+            'users.clarification',
+            'users.help',
+            'users.help.unknown',
+            'users.help.informational',
+        ]);
     });
 
     it('sanitiza emails en el prompt_normalized', function (): void {

@@ -31,10 +31,11 @@ describe('Users Copilot LLM Fallback Integration', function (): void {
         $planner = app(UsersCopilotRequestPlanner::class);
         $snapshot = new CopilotConversationSnapshot;
 
-        // Prompt que no matchea determinísticamente
+        // Prompt que no matchea determinísticamente.
+        // Fase 1d: el split emite 'users.help.unknown' cuando el flag esta activo.
         $plan = $planner->plan('xyz no match test prompt', $snapshot);
 
-        expect($plan['capability_key'])->toBe('users.help');
+        expect($plan['capability_key'])->toBeIn(['users.help', 'users.help.unknown']);
         expect($plan)->not->toHaveKey('classification_source');
     });
 

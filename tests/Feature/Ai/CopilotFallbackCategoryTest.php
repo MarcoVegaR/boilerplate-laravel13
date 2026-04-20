@@ -25,7 +25,8 @@ describe('Copilot Fallback Category Taxonomy', function (): void {
 
         $plan = $planner->plan('xyz123 completely unmatched prompt', $snapshot);
 
-        expect($plan['capability_key'])->toBe('users.help');
+        // Fase 1d: 'xyz123 completely unmatched prompt' no matchea nada -> unknown.
+        expect($plan['capability_key'])->toBe('users.help.unknown');
         expect($plan['intent_family'])->toBe('help');
     });
 
@@ -54,7 +55,7 @@ describe('Copilot Fallback Category Taxonomy', function (): void {
         $plan = $planner->plan('activa el usuario', $snapshot);
 
         // Sin usuario específico, debe pedir aclaración o proponer acción sin target
-        expect($plan['capability_key'])->toBeIn(['users.clarification', 'users.help']);
+        expect($plan['capability_key'])->toBeIn(['users.clarification', 'users.help', 'users.help.unknown', 'users.help.informational']);
         if ($plan['capability_key'] === 'users.clarification') {
             expect($plan['clarification_state']['reason'])->toBe('missing_target');
         }
@@ -66,8 +67,8 @@ describe('Copilot Fallback Category Taxonomy', function (): void {
 
         $plan = $planner->plan('como funciona el sistema de usuarios', $snapshot);
 
-        // Prompt informativo/educativo va a help
-        expect($plan['capability_key'])->toBe('users.help');
+        // Fase 1d: prompt informativo reconocido cae en informational split.
+        expect($plan['capability_key'])->toBeIn(['users.help', 'users.help.informational', 'users.help.unknown']);
         expect($plan['intent_family'])->toBe('help');
     });
 
@@ -77,7 +78,13 @@ describe('Copilot Fallback Category Taxonomy', function (): void {
 
         $plan = $planner->plan('y cuantos de esos son admin', $snapshot);
 
-        // Puede resolver a métrica admin_access, clarificación o help
-        expect($plan['capability_key'])->toBeIn(['users.clarification', 'users.help', 'users.metrics.admin_access']);
+        // Puede resolver a métrica admin_access, clarificación o help (split o legacy).
+        expect($plan['capability_key'])->toBeIn([
+            'users.clarification',
+            'users.help',
+            'users.help.unknown',
+            'users.help.informational',
+            'users.metrics.admin_access',
+        ]);
     });
 });

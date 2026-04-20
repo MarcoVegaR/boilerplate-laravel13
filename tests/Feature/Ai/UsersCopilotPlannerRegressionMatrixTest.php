@@ -21,6 +21,20 @@ function plannerSnapshot(array $attributes = []): CopilotConversationSnapshot
 }
 
 /**
+ * El golden set del planner congela el comportamiento PRE-contratos Fase 1.
+ * Los tests dedicados a cada flag (UsersCopilotGuardrailsTest,
+ * UsersCopilotStalenessTest, UsersCopilotHelpSplitTest) validan el contrato
+ * extendido. Mantener el golden set estable protege la integridad del
+ * planner como motor deterministico.
+ */
+beforeEach(function () {
+    config()->set('ai-copilot.contracts.denied_intent', false);
+    config()->set('ai-copilot.contracts.interpretation', false);
+    config()->set('ai-copilot.contracts.staleness_confirmation', false);
+    config()->set('ai-copilot.contracts.help_unknown_split', false);
+});
+
+/**
  * Precedencia observable: denial > continuation > informational > pending_clarification >
  * matrix > action_explain > entity > follow_up > mixed > roles_catalog > metrics >
  * permission_search > bulk_action > search > help.

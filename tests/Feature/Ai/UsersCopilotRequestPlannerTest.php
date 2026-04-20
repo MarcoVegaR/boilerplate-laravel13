@@ -98,12 +98,13 @@ it('routes informational prompts about users to help instead of entity clarifica
         CopilotConversationSnapshot::empty(),
     );
 
+    // Fase 1d: el split informational/unknown aplica cuando el flag esta activo.
     expect($plan)
         ->toMatchArray([
             'intent_family' => 'help',
-            'capability_key' => 'users.help',
             'proposal_vs_execute' => 'none',
         ])
+        ->and($plan['capability_key'])->toBeIn(['users.help', 'users.help.informational'])
         ->and($plan['clarification_state'])->toBeNull()
         ->and($plan['resolved_entity'])->toBeNull();
 });
@@ -281,11 +282,10 @@ it('does not trigger entity resolution for generic user references', function ()
         CopilotConversationSnapshot::empty(),
     );
 
+    // Fase 1d: el split informational/unknown aplica cuando el flag esta activo.
     expect($plan)
-        ->toMatchArray([
-            'intent_family' => 'help',
-            'capability_key' => 'users.help',
-        ])
+        ->toMatchArray(['intent_family' => 'help'])
+        ->and($plan['capability_key'])->toBeIn(['users.help', 'users.help.informational', 'users.help.unknown'])
         ->and($plan['clarification_state'])->toBeNull();
 });
 

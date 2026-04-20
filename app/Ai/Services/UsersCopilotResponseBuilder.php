@@ -4,7 +4,9 @@ namespace App\Ai\Services;
 
 use App\Ai\Support\CopilotConversationSnapshot;
 use App\Ai\Support\CopilotDenialCatalog;
+use App\Ai\Support\CopilotPlannerTelemetry;
 use App\Ai\Support\CopilotStructuredOutput;
+use App\Ai\Support\SearchQualityScorer;
 use App\Ai\Support\UsersCopilotDomainLexicon;
 use Illuminate\Support\Arr;
 
@@ -215,6 +217,14 @@ class UsersCopilotResponseBuilder
             default => 'high',
         };
 
+        // Fase 2c: telemetria de la interpretacion emitida al usuario.
+        CopilotPlannerTelemetry::interpretation(
+            source: $source,
+            confidence: $confidence,
+            capabilityKey: is_string($plan['capability_key'] ?? null) ? $plan['capability_key'] : null,
+            intentFamily: is_string($plan['intent_family'] ?? null) ? $plan['intent_family'] : null,
+        );
+
         return [
             'understood_intent' => $this->understoodIntentText($plan),
             'applied_filters' => $filters,
@@ -270,6 +280,14 @@ class UsersCopilotResponseBuilder
         $question = is_string($clarification['question'] ?? null) && $clarification['question'] !== ''
             ? $clarification['question']
             : $catalog['message'];
+
+        // Fase 2c: telemetria de denial con categoria y alternativas.
+        CopilotPlannerTelemetry::denial(
+            category: $category,
+            reason: $reason,
+            normalizedPrompt: (string) ($plan['request_normalization'] ?? ''),
+            alternatives: $catalog['alternatives'],
+        );
 
         return [
             'answer' => $question,
@@ -574,6 +592,16 @@ class UsersCopilotResponseBuilder
         $searchData = is_array($searchCard['data'] ?? null) ? $searchCard['data'] : [];
         $matchingCount = is_numeric($searchData['matching_count'] ?? null) ? (int) $searchData['matching_count'] : 0;
 
+        // Fase 3: score de calidad para decidir notas de respuesta parcial y
+        // enriquecer diagnostics.
+        $quality = SearchQualityScorer::score(
+            requestedFilters: is_array($plan['filters'] ?? null) ? $plan['filters'] : [],
+            appliedFilters: is_array($searchData['applied_filters'] ?? null)
+                ? $searchData['applied_filters']
+                : (is_array($plan['filters'] ?? null) ? $plan['filters'] : []),
+            resultCount: $matchingCount,
+        );
+
         return [
             'answer' => $this->searchAnswer($matchingCount, $plan),
             'intent' => 'search_results',
@@ -593,6 +621,7 @@ class UsersCopilotResponseBuilder
                 'diagnostics' => array_filter([
                     ...(is_array($executionResult['diagnostics'] ?? null) ? $executionResult['diagnostics'] : []),
                     'planner' => 'users_request_planner',
+                    'search_quality' => $quality,
                 ]),
             ],
         ];
@@ -750,6 +779,33 @@ class UsersCopilotResponseBuilder
             ),
         ])));
 
+        // Fase 3: score de calidad del segmento de busqueda dentro del mixed.
+        $quality = SearchQualityScorer::score(
+            requestedFilters: is_array($plan['filters'] ?? null) ? $plan['filters'] : [],
+            appliedFilters: is_array($searchData['applied_filters'] ?? null)
+                ? $searchData['applied_filters']
+                : (is_array($plan['filters'] ?? null) ? $plan['filters'] : []),
+            resultCount: $matchingCount,
+        );
+
+        // Si el segmento de busqueda quedo vacio pero las metricas si se
+        // resolvieron, emitir partial_notice honesto junto al resultado.
+        if ($quality['quality'] === 'empty') {
+            $cards[] = [
+                'kind' => 'partial_notice',
+                'title' => 'Respuesta parcial',
+                'summary' => 'Obtuve las metricas solicitadas pero la busqueda no devolvio coincidencias.',
+                'data' => [
+                    'segments' => [[
+                        'text' => 'Listado de usuarios que cumplen los filtros',
+                        'status' => 'not_executed',
+                        'reason' => 'sin coincidencias con los filtros indicados',
+                        'suggested_follow_up' => 'Relaja algun criterio o muestrame las opciones disponibles',
+                    ]],
+                ],
+            ];
+        }
+
         return [
             'answer' => $answer,
             'intent' => 'search_results',
@@ -769,6 +825,7 @@ class UsersCopilotResponseBuilder
                 'diagnostics' => array_filter([
                     ...(is_array($executionResult['diagnostics'] ?? null) ? $executionResult['diagnostics'] : []),
                     'planner' => 'users_request_planner',
+                    'search_quality' => $quality,
                 ]),
             ],
         ];
