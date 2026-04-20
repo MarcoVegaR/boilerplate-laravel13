@@ -193,6 +193,30 @@ final class UsersCopilotDomainLexicon
             'role', 'este', 'esta', 'esos', 'esas', 'todo', 'toda', 'todos', 'todas',
             'solo', 'otro', 'otra', 'otros', 'otras', 'para', 'cada', 'nada', 'algo',
             'creo', 'dime', 'dame', 'hace', 'hola', 'bien', 'malo', 'mala', 'pues',
+            // Fix Fase 5: verbos de seguridad criticos que NO deben ser corregidos.
+            // `levenshtein('entrar', 'enviar') = 2` los confundia y rompia el
+            // denial de impersonation. Preservamos ademas variantes coloquiales
+            // de acciones destructivas y secretos que el equipo auditoria.
+            'entra', 'entrar', 'entrame', 'entrarle', 'entras',
+            'accede', 'acceder', 'accedele', 'accedeme',
+            'ingresa', 'ingresar', 'ingresale', 'ingresame',
+            'hash', 'secreto', 'secretos', 'autenticador', 'autenticadores',
+            'codigo', 'codigos',
+            'borra', 'borrar', 'borrame', 'borralo', 'borrala', 'borrales',
+            'elimina', 'eliminar', 'eliminame', 'eliminalo', 'eliminala',
+            'quita', 'quitar', 'quitame', 'quitalo', 'quitala',
+            // Fix Fase 5: verbos naturales de alta. Antes eran corregidos por
+            // proximidad levenshtein a `creas/crear`, bloqueando el detector
+            // de create con lenguaje humano.
+            'agrega', 'agregar', 'agregalo', 'agregala', 'agregame',
+            'carga', 'cargar', 'cargalo', 'cargala', 'cargame',
+            'incorpora', 'incorporar', 'incorporalo', 'incorporala',
+            'suma', 'sumar', 'sumame', 'sumalo', 'sumala',
+            'registra', 'registrar', 'registrame', 'registralo', 'registrala',
+            'armalo', 'armala', 'hacelo', 'hacela',
+            // Fix Fase 5: `creame` se corrige a `crear` (dist=2), rompiendo
+            // regex literales como "creame el usuario". Lo preservamos.
+            'creame', 'crealo', 'creala', 'creales',
         ];
         if (in_array($stripped, $stopWords, true)) {
             return $token;

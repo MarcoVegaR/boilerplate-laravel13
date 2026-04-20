@@ -3,7 +3,6 @@
 namespace App\Ai\Services;
 
 use App\Ai\Agents\System\CopilotIntentClassifierAgent;
-use App\Ai\Services\Planning\PlannerStage;
 use App\Ai\Services\Planning\PlanningContext;
 use App\Ai\Services\Planning\PlanningPipeline;
 use App\Ai\Services\Planning\Stages\ActionExplanationStage;
@@ -11,11 +10,13 @@ use App\Ai\Services\Planning\Stages\ActionProposalStage;
 use App\Ai\Services\Planning\Stages\BulkActionDenialStage;
 use App\Ai\Services\Planning\Stages\ConfiguredMatrixStage;
 use App\Ai\Services\Planning\Stages\ConversationContinuationStage;
+use App\Ai\Services\Planning\Stages\CreateUserIntentStage;
 use App\Ai\Services\Planning\Stages\DenialStage;
 use App\Ai\Services\Planning\Stages\EntityActionFallbackStage;
 use App\Ai\Services\Planning\Stages\EntityPlanFallbackStage;
 use App\Ai\Services\Planning\Stages\EntityResolutionStage;
 use App\Ai\Services\Planning\Stages\FollowUpStage;
+use App\Ai\Services\Planning\Stages\HelpCreateUserStage;
 use App\Ai\Services\Planning\Stages\HelpUnknownStage;
 use App\Ai\Services\Planning\Stages\InformationalHelpStage;
 use App\Ai\Services\Planning\Stages\MetricsStage;
@@ -129,10 +130,12 @@ class UsersCopilotRequestPlanner
             new DenialStage,
             new StalenessConfirmationStage,
             new ConversationContinuationStage,
+            new HelpCreateUserStage, // ← Fix Fase 5: help sobre crear usuario
             new InformationalHelpStage,
             new PendingClarificationStage,
             new ConfiguredMatrixStage,
             new ActionExplanationStage,
+            new CreateUserIntentStage, // ← Fix Fase 5: salta EntityResolution para create
             new EntityResolutionStage, // ← escribe $context->entityPlan
             new FollowUpStage,
             new MixedMetricsSearchStage,
@@ -1252,6 +1255,12 @@ class UsersCopilotRequestPlanner
             return false;
         }
 
+        // Fix Fase 5: precedencia. "Dame de alta" / "dame el alta" contiene
+        // "dame" (verbo de busqueda) pero es alta, no search. Prioriza create.
+        if ($this->isCreateUserProposal($normalized)) {
+            return false;
+        }
+
         return preg_match('/\b(busca|buscar|muestra|mostrar|lista|listar|listame|encuentra|encontrar|dame)\b/u', $normalized) === 1
             || preg_match('/\b(quienes?|que\s+usuarios)\b.*\b(rol|perfil|permisos|acceso)\b/u', $normalized) === 1
             || preg_match('/\busuarios\s+admin\b/u', $normalized) === 1
@@ -1632,6 +1641,56 @@ class UsersCopilotRequestPlanner
     }
 
     /**
+     * Fix Fase 5: detector de prompts de AYUDA para crear usuarios. Cubre las
+     * formulaciones naturales en las que el usuario pregunta COMO proceder,
+     * que son semanticamente diferentes a dar instrucciones directas.
+     *
+     * Precedencia: si matchea aqui, NO debe pasar por action_proposal.
+     * La presencia de un email o nombre propio indica intent ejecutivo y
+     * descarta este detector.
+     */
+    public function looksLikeCreateUserHelpPrompt(string $normalized): bool
+    {
+        // Si hay email o datos concretos, no es ayuda: el usuario ya quiere ejecutar.
+        if ($this->extractEmailFromText($normalized) !== null) {
+            return false;
+        }
+
+        // Patrones informativos explicitos.
+        // - "como doy de alta / como se da de alta / como agrego / como registro"
+        // - "quiero ayuda para crear / ayuda con dar de alta"
+        // - "que debo hacer para crear / como creo un usuario"
+        // - "explicame como crear / explica como doy de alta"
+        return preg_match('/\b(como\s+(?:doy\s+de\s+alta|se\s+da\s+de\s+alta|agrego|registro|creo|incorporo|sumo|cargo)|como\s+(?:hago|se\s+hace)\s+(?:para|un)\s+(?:crear|registrar|dar\s+de\s+alta|agregar|incorporar))\b/u', $normalized) === 1
+            || preg_match('/\b(quiero|necesito)\s+ayuda\s+(?:para|con|en)\s+(?:crear|registrar|dar\s+de\s+alta|agregar|incorporar|sumar|cargar)\b/u', $normalized) === 1
+            || preg_match('/\b(que\s+debo\s+hacer|que\s+hago|como\s+puedo)\s+(?:para\s+)?(?:crear|registrar|dar\s+de\s+alta|agregar|incorporar)\b/u', $normalized) === 1
+            || preg_match('/\bexplica(?:me)?\s+como\s+(?:crear|registrar|dar\s+de\s+alta|agregar|incorporar|cargo?|sumo)\b/u', $normalized) === 1;
+    }
+
+    /**
+     * Fix Fase 5: plan canonico para ayuda sobre creacion de usuarios. Separa
+     * explicitamente la AYUDA de la accion (users.actions.create_user), evitando
+     * que prompts informativos se interpreten como propuestas ejecutables.
+     *
+     * @return array<string, mixed>
+     */
+    public function helpCreateUserPlan(string $normalized): array
+    {
+        $this->logFallback($normalized, 'users.help.create_user', 'help', null);
+
+        return [
+            'request_normalization' => $normalized,
+            'intent_family' => 'help',
+            'capability_key' => 'users.help.create_user',
+            'filters' => $this->emptyFilters(),
+            'resolved_entity' => null,
+            'missing_slots' => ['name', 'email'],
+            'clarification_state' => null,
+            'proposal_vs_execute' => 'none',
+        ];
+    }
+
+    /**
      * Fase 1d: plan canonico para prompts fuera del catalogo. Emite
      * `users.help.unknown` cuando el flag `help_unknown_split` esta activo.
      *
@@ -1898,7 +1957,11 @@ class UsersCopilotRequestPlanner
         }
 
         // 1. Impersonation (highest precedence)
-        if (preg_match('/\b(entra|entrar|logueate|loguear|iniciar?\s+sesion|accede|acceder)\s+(como|de|por)\b/u', $normalized) === 1) {
+        // Fix Fase 5: ampliamos para cubrir "necesito entrar como", "quiero
+        // entrar a la cuenta de", "ingresar como X para", etc.
+        if (preg_match('/\b(entra|entrar|logueate|loguear|iniciar?\s+sesion|accede|acceder|ingresa|ingresar)\s+(como|de|por|a)\b/u', $normalized) === 1
+            || preg_match('/\b(entrar|acceder|ingresar)\s+a\s+(la\s+)?cuenta\s+de\b/u', $normalized) === 1
+            || preg_match('/\bnecesito\s+entrar\s+como\b/u', $normalized) === 1) {
             return $this->clarificationPlan(
                 normalized: $normalized,
                 reason: 'denied:impersonation',
@@ -1907,8 +1970,12 @@ class UsersCopilotRequestPlanner
         }
 
         // 2. Sensitive data — requires exposure indicator + sensitive term co-occurrence
-        $sensitiveTerms = '/\b(contrasena|password|clave\s+de\s+acceso|token|2fa|otp|secret|recovery\s+code|codigo\s+de\s+recuperacion|api\s+key|bearer|credencial)\b/u';
-        $exposureIndicators = '/\b(dame|dime|muestra|mostrar|revela|revelar|cual\s+es|obtener|ver\s+la|ver\s+el|enviame|pasame|borrale\s+la|quitale\s+la|cambia\s+la)\b/u';
+        // Fix Fase 5: incorporamos paraphrases coloquiales:
+        // - "hash de contrasena", "hash del password"
+        // - "secreto del autenticador", "secreto de google authenticator"
+        // - "codigo de doble factor", "codigo 2fa", "token del authenticator"
+        $sensitiveTerms = '/\b(contrasena|password|clave\s+de\s+acceso|token|2fa|otp|secret|secreto|recovery\s+code|codigo\s+de\s+recuperacion|codigo\s+(de\s+)?(doble\s+factor|2fa|segundo\s+factor)|doble\s+factor|api\s+key|bearer|credencial|autenticador|authenticator|hash\s+(de\s+)?(contrasena|password|clave))\b/u';
+        $exposureIndicators = '/\b(dame|dime|muestra|muestrame|mostrar|mostrame|revela|revelar|cual\s+es|obtener|ver\s+la|ver\s+el|enviame|pasame|compartime|decime|necesito|quiero|borrale\s+la|quitale\s+la|cambia\s+la|con\s+que)\b/u';
 
         if (preg_match($sensitiveTerms, $normalized) === 1 && preg_match($exposureIndicators, $normalized) === 1) {
             return $this->clarificationPlan(
@@ -1919,8 +1986,14 @@ class UsersCopilotRequestPlanner
         }
 
         // 3. Unsupported operations
-        if (preg_match('/\b(eliminar?|borrar?|destruir?)\s+(definitivamente?\s+)?(al?\s+)?(usuario|cuenta|perfil)\b/u', $normalized) === 1
-            || preg_match('/\bexportar?\s+(a\s+)?(csv|excel|pdf|archivo|todos)\b/u', $normalized) === 1) {
+        // Fix Fase 5: cubrimos variantes coloquiales de delete aplicadas a
+        // email directamente ("borrame a mario@...", "eliminar de una vez",
+        // "sacalo de la base") y mantenemos el export existente.
+        if (preg_match('/\b(eliminar?|borrar?|destruir?|sacar?)\s+(definitivamente?\s+)?(al?\s+)?(usuario|cuenta|perfil)\b/u', $normalized) === 1
+            || preg_match('/\b(borra(?:me|lo|la|les)?|elimina(?:me|lo|la|les)?|quitame|sacame)\s+a?\s*[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/u', $normalized) === 1
+            || preg_match('/\b(borra(?:me|lo|la)?|elimina(?:me|lo|la)?)\s+a\s+\w+\s+de\s+(una\s+vez|todo|una|la\s+base)/u', $normalized) === 1
+            || preg_match('/\bexportar?\s+(a\s+)?(csv|excel|pdf|archivo|todos)\b/u', $normalized) === 1
+            || preg_match('/\bexporta(?:me|lo|la)?\s+(la\s+)?lista\s+(completa\s+)?(de\s+usuarios|con\s+sus\s+correos|de\s+todos)\b/u', $normalized) === 1) {
             return $this->clarificationPlan(
                 normalized: $normalized,
                 reason: 'denied:unsupported_operation',
@@ -2056,8 +2129,18 @@ class UsersCopilotRequestPlanner
 
     public function looksLikeActionProposal(string $normalized): bool
     {
-        return preg_match('/\b(propon|prepara|desactiva|desactivar|desactivalo|activa|activar|reactiva|reactivar|reactivalo|reset|restablece|restablecer|restablecele|crea|crear|alta)\b/u', $normalized) === 1
-            || (str_contains($normalized, 'restablecimiento') && preg_match('/\b(necesito|quiero|puedo|ayudame|enviar|envia)\b/u', $normalized) === 1);
+        if (preg_match('/\b(propon|prepara|desactiva|desactivar|desactivalo|activa|activar|reactiva|reactivar|reactivalo|reset|restablece|restablecer|restablecele|crea|crear|alta|armalo|hacelo)\b/u', $normalized) === 1) {
+            return true;
+        }
+
+        if (str_contains($normalized, 'restablecimiento') && preg_match('/\b(necesito|quiero|puedo|ayudame|enviar|envia)\b/u', $normalized) === 1) {
+            return true;
+        }
+
+        // Fix Fase 5: verbos naturales de alta. Delegamos a isCreateUserProposal
+        // que ya aplica los guards (email o marca de novedad) para evitar que
+        // "agregar un filtro" o "sumar criterios" se confundan con create.
+        return $this->isCreateUserProposal($normalized);
     }
 
     public function looksLikeConversationContinuation(string $normalized): bool
@@ -2500,9 +2583,73 @@ class UsersCopilotRequestPlanner
         };
     }
 
+    /**
+     * Fix Fase 5: detecta senales FUERTES de intencion de crear usuario.
+     * Usadas por CreateUserIntentStage para saltarse la resolucion de entidad
+     * (que buscaria el email y fallaria, emitiendo un clarification falso).
+     *
+     * Criterio: verbo de create + (email o marca explicita de novedad).
+     */
+    public function looksLikeStrongCreateUserIntent(string $normalized): bool
+    {
+        if (! $this->isCreateUserProposal($normalized)) {
+            return false;
+        }
+
+        $hasEmail = preg_match('/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/', $normalized) === 1;
+        $hasNoveltyMarker = preg_match('/\b(usuario|usuaria)\s+(nuevo|nueva)\b/u', $normalized) === 1
+            || preg_match('/\bno\s+existe\s+(todavia|aun|todavia\s+no|aun\s+no)\b/u', $normalized) === 1
+            || preg_match('/\bcreame\s+(el\s+|un\s+)?usuario\b/u', $normalized) === 1
+            || preg_match('/\balta\b/u', $normalized) === 1;
+
+        return $hasEmail || $hasNoveltyMarker;
+    }
+
     public function isCreateUserProposal(string $normalized): bool
     {
-        return str_contains($normalized, 'crear usuario') || str_contains($normalized, 'alta');
+        // Verbos literales ya existentes.
+        if (str_contains($normalized, 'crear usuario')
+            || str_contains($normalized, 'crear un usuario')
+            || str_contains($normalized, 'creame el usuario')
+            || str_contains($normalized, 'creame un usuario')
+            || str_contains($normalized, 'alta')) {
+            return true;
+        }
+
+        $hasEmail = preg_match('/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/', $normalized) === 1;
+        $hasNovelty = preg_match('/\b(usuario|usuaria)\s+(nuevo|nueva)\b/u', $normalized) === 1
+            || preg_match('/\b(este|esta)\s+(usuario|usuaria)\b/u', $normalized) === 1
+            || preg_match('/\bno\s+existe\s+todavia\b/u', $normalized) === 1;
+
+        // Fix Fase 5: verbos naturales de alta (registrar/sumar/incorporar/cargar/agregar).
+        // Se exige email o novedad para reducir falsos positivos.
+        if ($hasEmail || $hasNovelty) {
+            if (preg_match('/\b(registra(?:r|me|lo|la)?|sumar?|sumame|incorpora(?:r|lo|la)?|carga(?:r|lo|la)?|agrega(?:r|lo|la|me)?|registrarme)\b/u', $normalized) === 1) {
+                return true;
+            }
+        }
+
+        // Fix Fase 5: fórmulas sin verbo de create explícito pero con senal
+        // contextual fuerte. Cubre:
+        // - "hacelo vos: usuario nuevo con email X"
+        // - "armalo: Diego, diego@..., rol Soporte"
+        // - "con estos datos armalo / hacelo / preparalo"
+        if ($hasEmail && $hasNovelty
+            && (preg_match('/\b(hacelo|armalo|preparalo|dale|dalo\s+de\s+alta)\b/u', $normalized) === 1
+                || preg_match('/\bcon\s+(estos\s+)?datos\b/u', $normalized) === 1)) {
+            return true;
+        }
+
+        // Fix Fase 5: email + "con estos datos" + verbo imperativo = create
+        // aunque no haya novelty marker explicito. El patron "ahora con estos
+        // datos armalo: X, X@..., rol Y" es un handoff de datos a ejecutar.
+        if ($hasEmail
+            && preg_match('/\bcon\s+estos\s+datos\b/u', $normalized) === 1
+            && preg_match('/\b(armalo|hacelo|preparalo|crealo|creamelo)\b/u', $normalized) === 1) {
+            return true;
+        }
+
+        return false;
     }
 
     protected function extractEmailFromText(string $text): ?string
