@@ -446,6 +446,39 @@ class CopilotConversationService
             );
         }
 
+        if ($capabilityKey === 'users.mixed.create_search') {
+            return [
+                ...$this->usersCopilotCapabilityExecutor->executeSearch(
+                    $actor,
+                    is_array($plan['filters'] ?? null) ? $plan['filters'] : [],
+                ),
+                'capability_key' => 'users.mixed.create_search',
+                'family' => 'mixed_partial',
+                'diagnostics' => [
+                    'executor' => 'users_capability_executor',
+                    'source_of_truth' => 'deterministic_backend',
+                    'composite' => 'create_plus_search',
+                ],
+            ];
+        }
+
+        if ($capabilityKey === 'users.mixed.create_unsupported') {
+            return [
+                'capability_key' => 'users.mixed.create_unsupported',
+                'family' => 'mixed_partial',
+                'outcome' => 'ok',
+                'cards' => [],
+                'actions' => [],
+                'references' => [],
+                'snapshot_updates' => [],
+                'diagnostics' => [
+                    'executor' => 'users_capability_executor',
+                    'source_of_truth' => 'deterministic_backend',
+                    'composite' => 'create_plus_unsupported',
+                ],
+            ];
+        }
+
         if ($capabilityKey === 'users.search') {
             return $this->usersCopilotCapabilityExecutor->executeSearch(
                 $actor,
@@ -505,6 +538,13 @@ class CopilotConversationService
             );
         }
 
+        if ($capabilityKey === 'users.actions.create_user') {
+            return $this->usersCopilotCapabilityExecutor->executeCreateUserProposal(
+                $actor,
+                is_array($plan['create_user_payload'] ?? null) ? $plan['create_user_payload'] : [],
+            );
+        }
+
         if (! is_string($capabilityKey) || ! in_array($capabilityKey, UsersCopilotCapabilityCatalog::aggregateKeys(), true)) {
             return null;
         }
@@ -544,6 +584,7 @@ class CopilotConversationService
             'detail',
             'action',
             'mixed',
+            'mixed_partial',
             'explain',
             'clarification',
             // Fase 1a/1c: denied y continuation_confirm no necesitan provider.

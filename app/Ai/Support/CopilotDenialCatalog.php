@@ -21,6 +21,10 @@ class CopilotDenialCatalog
 
     public const CATEGORY_UNSUPPORTED_BULK = 'unsupported_bulk';
 
+    public const CATEGORY_PRIVILEGE_ESCALATION = 'privilege_escalation';
+
+    public const CATEGORY_BYPASS_POLICY = 'bypass_policy';
+
     /**
      * @return array<string, array{message: string, alternatives: list<array{label: string, prompt: string}>}>
      */
@@ -68,6 +72,28 @@ class CopilotDenialCatalog
                     [
                         'label' => 'Listar usuarios con rol admin',
                         'prompt' => 'Que usuarios tienen rol admin',
+                    ],
+                ],
+            ],
+            self::CATEGORY_PRIVILEGE_ESCALATION => [
+                'message' => 'No puedo conceder acceso total ni elevar privilegios desde el copiloto sin una politica y permisos validos.',
+                'alternatives' => [
+                    [
+                        'label' => 'Revisar roles disponibles',
+                        'prompt' => 'Muestrame los roles disponibles',
+                    ],
+                    [
+                        'label' => 'Explicar permisos de un usuario',
+                        'prompt' => 'Explica que permisos tiene un usuario',
+                    ],
+                ],
+            ],
+            self::CATEGORY_BYPASS_POLICY => [
+                'message' => 'No puedo saltarme validaciones, permisos ni politicas de seguridad.',
+                'alternatives' => [
+                    [
+                        'label' => 'Revisar capacidades permitidas',
+                        'prompt' => 'Solo dime que acciones puede hacer el copiloto de usuarios',
                     ],
                 ],
             ],

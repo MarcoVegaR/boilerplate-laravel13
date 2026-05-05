@@ -9,7 +9,7 @@ use JsonSerializable;
 
 class CopilotConversationSnapshot implements Arrayable, JsonSerializable
 {
-    public const VERSION = 1;
+    public const VERSION = 2;
 
     public const RESULT_USER_ID_LIMIT = 8;
 
@@ -119,6 +119,22 @@ class CopilotConversationSnapshot implements Arrayable, JsonSerializable
     }
 
     /**
+     * @return array<string, mixed>|null
+     */
+    public function pendingCreateUser(): ?array
+    {
+        return $this->attributes['pending_create_user'];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function lastSegments(): array
+    {
+        return $this->attributes['last_segments'];
+    }
+
+    /**
      * @return array{type: string, id: int}|null
      */
     public function resolvedEntity(): ?array
@@ -139,6 +155,7 @@ class CopilotConversationSnapshot implements Arrayable, JsonSerializable
             || $this->lastResultCount() !== null
             || $this->pendingClarification() !== null
             || $this->pendingActionProposal() !== null
+            || $this->pendingCreateUser() !== null
             || $this->resolvedEntity() !== null;
     }
 
@@ -353,12 +370,42 @@ class CopilotConversationSnapshot implements Arrayable, JsonSerializable
                 ? $attributes['pending_clarification']
                 : null,
             'pending_action_proposal' => is_array($attributes['pending_action_proposal'] ?? null)
-                ? $attributes['pending_action_proposal']
+                ? self::normalizePendingActionProposal($attributes['pending_action_proposal'])
                 : null,
+            'pending_create_user' => is_array($attributes['pending_create_user'] ?? null)
+                ? $attributes['pending_create_user']
+                : null,
+            'last_segments' => array_values(array_filter(
+                is_array($attributes['last_segments'] ?? null) ? $attributes['last_segments'] : [],
+                static fn (mixed $segment): bool => is_array($segment),
+            )),
             'conversation_state_version' => is_numeric($attributes['conversation_state_version'] ?? null)
                 ? max((int) $attributes['conversation_state_version'], 1)
                 : self::VERSION,
             'last_turn_at' => self::normalizeLastTurnAt($attributes['last_turn_at'] ?? null),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $proposal
+     * @return array<string, mixed>
+     */
+    protected static function normalizePendingActionProposal(array $proposal): array
+    {
+        return [
+            'id' => is_string($proposal['id'] ?? null) ? $proposal['id'] : null,
+            'action_type' => is_string($proposal['action_type'] ?? null) ? $proposal['action_type'] : null,
+            'target' => is_array($proposal['target'] ?? null) ? $proposal['target'] : null,
+            'payload' => is_array($proposal['payload'] ?? null) ? $proposal['payload'] : [],
+            'summary' => is_string($proposal['summary'] ?? null) ? $proposal['summary'] : null,
+            'required_permissions' => array_values(array_filter(
+                is_array($proposal['required_permissions'] ?? null) ? $proposal['required_permissions'] : [],
+                static fn (mixed $permission): bool => is_string($permission),
+            )),
+            'created_at' => is_string($proposal['created_at'] ?? null) ? $proposal['created_at'] : null,
+            'expires_at' => is_string($proposal['expires_at'] ?? null) ? $proposal['expires_at'] : null,
+            'fingerprint' => is_string($proposal['fingerprint'] ?? null) ? $proposal['fingerprint'] : null,
+            'can_execute' => (bool) ($proposal['can_execute'] ?? false),
         ];
     }
 

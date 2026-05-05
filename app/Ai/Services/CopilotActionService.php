@@ -5,10 +5,12 @@ namespace App\Ai\Services;
 use App\Actions\System\Users\CreateUserAction;
 use App\Ai\Support\CopilotActionProposal;
 use App\Ai\Support\CopilotActionType;
+use App\Ai\Support\CopilotConversationSnapshot;
 use App\Enums\SecurityEventType;
 use App\Models\User;
 use App\Services\SecurityAuditService;
 use App\Support\System\Users\UserCreationRules;
+use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -38,7 +40,9 @@ class CopilotActionService
             throw new AuthorizationException(__('No tienes permiso para ejecutar acciones del copiloto.'));
         }
 
-        return match ($actionType) {
+        $this->assertPendingProposalMatches($actor, $actionType, $validated);
+
+        $result = match ($actionType) {
             CopilotActionType::Activate => $this->activateUser(
                 actor: $actor,
                 target: User::query()->findOrFail((int) data_get($validated, 'target.user_id')),
@@ -64,6 +68,10 @@ class CopilotActionService
                 ipAddress: $ipAddress,
             ),
         };
+
+        $this->clearPendingProposal((string) data_get($validated, 'conversation_id'));
+
+        return $result;
     }
 
     /**
@@ -120,6 +128,101 @@ class CopilotActionService
                 'notice' => __('Esta contraseña temporal solo se muestra una vez.'),
             ],
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    protected function assertPendingProposalMatches(User $actor, CopilotActionType $actionType, array $validated): void
+    {
+        $conversationId = data_get($validated, 'conversation_id');
+
+        if (! is_string($conversationId) || $conversationId === '') {
+            throw ValidationException::withMessages([
+                'conversation_id' => __('Debes confirmar una propuesta vigente del copiloto.'),
+            ]);
+        }
+
+        $conversation = DB::table('agent_conversations')
+            ->select(['user_id', 'snapshot', 'snapshot_version', 'last_turn_at'])
+            ->where('id', $conversationId)
+            ->first();
+
+        if ($conversation === null || (int) $conversation->user_id !== $actor->id) {
+            throw ValidationException::withMessages([
+                'conversation_id' => __('La propuesta no pertenece a una conversacion vigente.'),
+            ]);
+        }
+
+        $proposal = CopilotConversationSnapshot::fromDatabase(
+            $conversation->snapshot,
+            $conversation->snapshot_version,
+            $conversation->last_turn_at,
+        )->pendingActionProposal();
+
+        if (! is_array($proposal) || ($proposal['can_execute'] ?? false) !== true) {
+            throw ValidationException::withMessages([
+                'proposal' => __('No hay una propuesta ejecutable pendiente para confirmar.'),
+            ]);
+        }
+
+        $expiresAt = is_string($proposal['expires_at'] ?? null)
+            ? CarbonImmutable::parse($proposal['expires_at'])
+            : null;
+
+        if ($expiresAt === null || $expiresAt->isPast()) {
+            throw ValidationException::withMessages([
+                'proposal' => __('La propuesta del copiloto vencio. Solicita una nueva propuesta antes de ejecutar.'),
+            ]);
+        }
+
+        $proposalId = $proposal['id'] ?? null;
+        $requestProposalId = data_get($validated, 'proposal_id');
+
+        if (is_string($requestProposalId) && $proposalId !== $requestProposalId) {
+            throw ValidationException::withMessages([
+                'proposal_id' => __('La propuesta confirmada no coincide con la propuesta pendiente.'),
+            ]);
+        }
+
+        if (($proposal['action_type'] ?? null) !== $actionType->value) {
+            throw ValidationException::withMessages([
+                'action_type' => __('La accion confirmada no coincide con la propuesta pendiente.'),
+            ]);
+        }
+
+        $expectedFingerprint = CopilotActionProposal::fingerprint([
+            'action_type' => $actionType->value,
+            'target' => $proposal['target'] ?? null,
+            'payload' => $proposal['payload'] ?? [],
+            'required_permissions' => $proposal['required_permissions'] ?? [],
+        ]);
+        $proposalFingerprint = is_string($proposal['fingerprint'] ?? null) ? $proposal['fingerprint'] : '';
+        $requestFingerprint = data_get($validated, 'fingerprint');
+
+        if (! hash_equals($proposalFingerprint, $expectedFingerprint)) {
+            throw ValidationException::withMessages([
+                'fingerprint' => __('La propuesta pendiente fue modificada o ya no es confiable.'),
+            ]);
+        }
+
+        if (is_string($requestFingerprint) && ! hash_equals($proposalFingerprint, $requestFingerprint)) {
+            throw ValidationException::withMessages([
+                'fingerprint' => __('La huella de la propuesta confirmada no coincide.'),
+            ]);
+        }
+
+        if (($proposal['target'] ?? null) != data_get($validated, 'target')) {
+            throw ValidationException::withMessages([
+                'target' => __('El objetivo confirmado no coincide con la propuesta pendiente.'),
+            ]);
+        }
+
+        if (($proposal['payload'] ?? []) != data_get($validated, 'payload', [])) {
+            throw ValidationException::withMessages([
+                'payload' => __('La carga confirmada no coincide con la propuesta pendiente.'),
+            ]);
+        }
     }
 
     /**
@@ -257,6 +360,31 @@ class CopilotActionService
                 'outcome' => $outcome,
             ],
         );
+    }
+
+    protected function clearPendingProposal(string $conversationId): void
+    {
+        $conversation = DB::table('agent_conversations')
+            ->select(['snapshot', 'snapshot_version', 'last_turn_at'])
+            ->where('id', $conversationId)
+            ->first();
+
+        if ($conversation === null) {
+            return;
+        }
+
+        $snapshot = CopilotConversationSnapshot::fromDatabase(
+            $conversation->snapshot,
+            $conversation->snapshot_version,
+            $conversation->last_turn_at,
+        )->with(['pending_action_proposal' => null]);
+
+        DB::table('agent_conversations')
+            ->where('id', $conversationId)
+            ->update([
+                ...$snapshot->toDatabase(),
+                'updated_at' => now(),
+            ]);
     }
 
     /**

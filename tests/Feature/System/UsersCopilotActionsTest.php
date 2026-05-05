@@ -1,5 +1,8 @@
 <?php
 
+use App\Ai\Support\CopilotActionProposal;
+use App\Ai\Support\CopilotActionType;
+use App\Ai\Support\CopilotConversationSnapshot;
 use App\Models\Role;
 use App\Models\SecurityAuditLog;
 use App\Models\User;
@@ -30,36 +33,113 @@ function copilotActionOperator(array $permissions): User
     return $user;
 }
 
-function copilotActionPayload(string $actionType, User $target, ?string $conversationId = null): array
+function copilotActionPayload(string $actionType, User $target, ?string $conversationId = null, ?User $actor = null): array
 {
+    $targetPayload = CopilotActionProposal::userTarget($target);
+    $payload = [
+        'reason' => 'copilot_confirmed_action',
+    ];
+    $copilotActionType = CopilotActionType::tryFrom($actionType);
+
+    if ($copilotActionType === null) {
+        return [
+            'conversation_id' => $conversationId ?? '018f0f66-5a1c-7d6e-b50c-4f3a2e0d5a11',
+            'target' => $targetPayload,
+            'payload' => $payload,
+        ];
+    }
+
+    $proposal = copilotPersistActionProposal(
+        actor: $actor,
+        conversationId: $conversationId ?? '018f0f66-5a1c-7d6e-b50c-4f3a2e0d5a11',
+        actionType: $copilotActionType,
+        target: $targetPayload,
+        payload: $payload,
+        permissions: [],
+    );
+
     return [
-        'conversation_id' => $conversationId ?? '018f0f66-5a1c-7d6e-b50c-4f3a2e0d5a11',
-        'target' => [
-            'kind' => 'user',
-            'user_id' => $target->id,
-            'name' => $target->name,
-            'email' => $target->email,
-        ],
-        'payload' => [
-            'reason' => 'copilot_confirmed_action',
-        ],
+        'conversation_id' => $proposal['conversation_id'],
+        'proposal_id' => $proposal['id'],
+        'fingerprint' => $proposal['fingerprint'],
+        'target' => $targetPayload,
+        'payload' => $payload,
     ];
 }
 
-function copilotCreateUserPayload(Role $role, ?string $conversationId = null): array
+function copilotCreateUserPayload(Role $role, ?string $conversationId = null, ?User $actor = null): array
 {
+    $target = [
+        'kind' => 'new_user',
+        'name' => 'Laura Copilot',
+        'email' => 'laura@example.com',
+    ];
+    $payload = [
+        'name' => 'Laura Copilot',
+        'email' => 'laura@example.com',
+        'roles' => [$role->id],
+    ];
+    $proposal = copilotPersistActionProposal(
+        actor: $actor,
+        conversationId: $conversationId ?? '018f0f66-5a1c-7d6e-b50c-4f3a2e0d5a11',
+        actionType: CopilotActionType::CreateUser,
+        target: $target,
+        payload: $payload,
+        permissions: ['system.users.create', 'system.users.assign-role'],
+    );
+
     return [
-        'conversation_id' => $conversationId ?? '018f0f66-5a1c-7d6e-b50c-4f3a2e0d5a11',
-        'target' => [
-            'kind' => 'new_user',
-            'name' => 'Laura Copilot',
-            'email' => 'laura@example.com',
-        ],
-        'payload' => [
-            'name' => 'Laura Copilot',
-            'email' => 'laura@example.com',
-            'roles' => [$role->id],
-        ],
+        'conversation_id' => $proposal['conversation_id'],
+        'proposal_id' => $proposal['id'],
+        'fingerprint' => $proposal['fingerprint'],
+        'target' => $target,
+        'payload' => $payload,
+    ];
+}
+
+/**
+ * @param  array<string, mixed>  $target
+ * @param  array<string, mixed>  $payload
+ * @param  list<string>  $permissions
+ * @return array<string, mixed>
+ */
+function copilotPersistActionProposal(
+    ?User $actor,
+    string $conversationId,
+    CopilotActionType $actionType,
+    array $target,
+    array $payload,
+    array $permissions,
+): array {
+    $actor ??= auth()->user();
+    $proposal = CopilotActionProposal::make(
+        actionType: $actionType,
+        target: $target,
+        summary: 'Propuesta lista.',
+        payload: $payload,
+        canExecute: true,
+        denyReason: null,
+        requiredPermissions: $permissions,
+    );
+
+    if ($actor instanceof User) {
+        DB::table('agent_conversations')->updateOrInsert(
+            ['id' => $conversationId],
+            [
+                'user_id' => $actor->id,
+                'title' => 'Propuesta de accion',
+                ...CopilotConversationSnapshot::empty()->with([
+                    'pending_action_proposal' => $proposal,
+                ])->toDatabase(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        );
+    }
+
+    return [
+        ...$proposal,
+        'conversation_id' => $conversationId,
     ];
 }
 

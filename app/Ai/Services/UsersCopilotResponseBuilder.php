@@ -64,7 +64,15 @@ class UsersCopilotResponseBuilder
             );
         }
 
-        if (is_array($executionResult['cards'][0] ?? null) && (($executionResult['cards'][0]['kind'] ?? null) === 'notice')) {
+        if (($executionResult['family'] ?? null) === 'mixed_partial' && ($executionResult['outcome'] ?? null) === 'ok') {
+            return $this->withInterpretation(
+                $this->mixedPartialPayload($plan, $snapshot, $executionResult, $responseSource, $subjectUserId),
+                $plan,
+                'deterministic',
+            );
+        }
+
+        if (($executionResult['family'] ?? null) !== 'action' && is_array($executionResult['cards'][0] ?? null) && (($executionResult['cards'][0]['kind'] ?? null) === 'notice')) {
             return $this->withInterpretation(
                 $this->noticePayload($plan, $snapshot, $executionResult, $responseSource, $subjectUserId),
                 $plan,
@@ -183,6 +191,8 @@ class UsersCopilotResponseBuilder
      */
     protected function withInterpretation(array $payload, array $plan, string $source): array
     {
+        $payload = CopilotStructuredOutput::ensureResolution($payload);
+
         if (! $this->isInterpretationEnabled()) {
             return $payload;
         }
@@ -463,9 +473,16 @@ class UsersCopilotResponseBuilder
 
             if (is_array($firstAction)) {
                 $attributes['pending_action_proposal'] = [
+                    'id' => $firstAction['id'] ?? null,
                     'action_type' => $firstAction['action_type'] ?? null,
                     'target' => is_array($firstAction['target'] ?? null) ? $firstAction['target'] : null,
+                    'payload' => is_array($firstAction['payload'] ?? null) ? $firstAction['payload'] : [],
                     'summary' => $firstAction['summary'] ?? null,
+                    'required_permissions' => array_values(array_filter(Arr::wrap($firstAction['required_permissions'] ?? []), static fn (mixed $permission): bool => is_string($permission))),
+                    'created_at' => $firstAction['created_at'] ?? null,
+                    'expires_at' => $firstAction['expires_at'] ?? null,
+                    'fingerprint' => $firstAction['fingerprint'] ?? null,
+                    'can_execute' => (bool) ($firstAction['can_execute'] ?? false),
                 ];
 
                 if (($firstAction['target']['kind'] ?? null) === 'user' && is_numeric($firstAction['target']['user_id'] ?? null)) {
@@ -718,13 +735,16 @@ class UsersCopilotResponseBuilder
     ): array {
         $actions = array_values(array_filter(Arr::wrap($executionResult['actions'] ?? []), static fn (mixed $action): bool => is_array($action)));
         $firstAction = $actions[0] ?? null;
+        $cards = array_values(array_filter(Arr::wrap($executionResult['cards'] ?? []), static fn (mixed $card): bool => is_array($card)));
+        $missingFields = array_values(array_filter(Arr::wrap($cards[0]['data']['missing_fields'] ?? []), static fn (mixed $field): bool => is_string($field) && $field !== ''));
+        $canExecute = count($actions) > 0 && collect($actions)->contains(static fn (array $action): bool => (bool) ($action['can_execute'] ?? false));
 
         return [
             'answer' => $this->actionAnswer($firstAction),
             'intent' => 'action_proposal',
-            'cards' => [],
+            'cards' => $cards,
             'actions' => $actions,
-            'requires_confirmation' => count($actions) > 0 && collect($actions)->contains(static fn (array $action): bool => (bool) ($action['can_execute'] ?? false)),
+            'requires_confirmation' => $canExecute,
             'references' => array_values(array_filter(Arr::wrap($executionResult['references'] ?? []), static fn (mixed $reference): bool => is_array($reference))),
             'meta' => [
                 'module' => 'users',
@@ -739,6 +759,19 @@ class UsersCopilotResponseBuilder
                     ...(is_array($executionResult['diagnostics'] ?? null) ? $executionResult['diagnostics'] : []),
                     'planner' => 'users_request_planner',
                 ]),
+            ],
+            'resolution' => [
+                'state' => ($canExecute || $missingFields === []) ? 'resolved' : 'clarification_required',
+                'confidence' => 'high',
+                'action_boundary' => $canExecute ? 'proposed' : 'blocked',
+                'understood' => [],
+                'unresolved' => $canExecute ? [] : [[
+                    'text' => 'Propuesta de accion no ejecutable todavia',
+                    'status' => 'pending',
+                    'reason' => 'faltan datos requeridos para confirmar',
+                ]],
+                'missing' => $missingFields,
+                'denials' => [],
             ],
         ];
     }
@@ -826,6 +859,54 @@ class UsersCopilotResponseBuilder
                     ...(is_array($executionResult['diagnostics'] ?? null) ? $executionResult['diagnostics'] : []),
                     'planner' => 'users_request_planner',
                     'search_quality' => $quality,
+                ]),
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $plan
+     * @param  array<string, mixed>  $executionResult
+     * @return array<string, mixed>
+     */
+    protected function mixedPartialPayload(
+        array $plan,
+        CopilotConversationSnapshot $snapshot,
+        array $executionResult,
+        string $responseSource,
+        ?int $subjectUserId,
+    ): array {
+        $cards = array_values(array_filter(Arr::wrap($executionResult['cards'] ?? []), static fn (mixed $card): bool => is_array($card)));
+        $segments = array_values(array_filter(Arr::wrap($plan['mixed_segments'] ?? []), static fn (mixed $segment): bool => is_array($segment)));
+
+        $cards[] = [
+            'kind' => 'partial_notice',
+            'title' => 'Respuesta parcial',
+            'summary' => 'Resolvi la parte de consulta y deje sin ejecutar la parte de accion.',
+            'data' => [
+                'segments' => $segments,
+            ],
+        ];
+
+        return [
+            'answer' => 'Resolvi la consulta disponible. La parte de accion no fue ejecutada.',
+            'intent' => 'partial',
+            'cards' => $cards,
+            'actions' => [],
+            'requires_confirmation' => false,
+            'references' => array_values(array_filter(Arr::wrap($executionResult['references'] ?? []), static fn (mixed $reference): bool => is_array($reference))),
+            'meta' => [
+                'module' => 'users',
+                'channel' => 'web',
+                'subject_user_id' => $subjectUserId,
+                'fallback' => false,
+                'capability_key' => 'users.mixed.create_search',
+                'intent_family' => 'partial',
+                'conversation_state_version' => $snapshot->version(),
+                'response_source' => $responseSource,
+                'diagnostics' => array_filter([
+                    ...(is_array($executionResult['diagnostics'] ?? null) ? $executionResult['diagnostics'] : []),
+                    'planner' => 'users_request_planner',
                 ]),
             ],
         ];

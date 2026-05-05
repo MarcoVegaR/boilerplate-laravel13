@@ -43,15 +43,19 @@ class CreateUserTool implements Tool
             ->active()
             ->get()
             ->filter(function (Role $role) use ($request): bool {
+                $requestedRoleIds = collect($request['roles'] ?? [])
+                    ->filter(fn (mixed $value): bool => is_int($value) || (is_string($value) && is_numeric($value)))
+                    ->map(fn (int|string $value): int => (int) $value);
                 $requestedRoles = collect($request['roles'] ?? [])
                     ->filter(fn ($value) => is_string($value) && $value !== '')
                     ->map(fn (string $value) => mb_strtolower(trim($value)));
 
-                if ($requestedRoles->isEmpty()) {
+                if ($requestedRoles->isEmpty() && $requestedRoleIds->isEmpty()) {
                     return false;
                 }
 
-                return $requestedRoles->contains(mb_strtolower($role->name))
+                return $requestedRoleIds->contains((int) $role->id)
+                    || $requestedRoles->contains(mb_strtolower($role->name))
                     || ($role->display_name !== null && $requestedRoles->contains(mb_strtolower($role->display_name)));
             })
             ->values();
@@ -63,7 +67,8 @@ class CreateUserTool implements Tool
             'role_labels' => $matchedRoles->map(fn (Role $role): string => $role->display_name ?? $role->name)->all(),
         ];
 
-        $canExecute = $this->actor->hasPermissionTo('system.users-copilot.execute');
+        $missingFields = $this->missingFields($payload);
+        $canExecute = $this->actor->hasPermissionTo('system.users-copilot.execute') && $missingFields === [];
 
         return json_encode([
             'available' => true,
@@ -73,10 +78,10 @@ class CreateUserTool implements Tool
                 summary: __('Preparé una propuesta de alta guiada. Revísala y confirma para crear el usuario.'),
                 payload: $payload,
                 canExecute: $canExecute,
-                denyReason: $canExecute ? null : __('También necesitas permiso para ejecutar acciones confirmadas del copiloto.'),
+                denyReason: $canExecute ? null : ($missingFields === [] ? __('También necesitas permiso para ejecutar acciones confirmadas del copiloto.') : __('Completa los campos faltantes antes de confirmar el alta.')),
                 requiredPermissions: $requiredPermissions,
             ),
-            'missing_fields' => $this->missingFields($payload),
+            'missing_fields' => $missingFields,
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
     }
 

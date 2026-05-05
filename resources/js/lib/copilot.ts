@@ -34,7 +34,9 @@ export type CopilotDenialCategory =
     | 'sensitive_data'
     | 'impersonation'
     | 'unsupported_operation'
-    | 'unsupported_bulk';
+    | 'unsupported_bulk'
+    | 'privilege_escalation'
+    | 'bypass_policy';
 
 export type CopilotInterpretationSource =
     | 'deterministic'
@@ -80,6 +82,7 @@ export type CopilotActionTarget =
       };
 
 export type CopilotActionProposal = {
+    id: string;
     kind: 'action_proposal';
     action_type: CopilotActionType;
     target: CopilotActionTarget;
@@ -88,6 +91,34 @@ export type CopilotActionProposal = {
     can_execute: boolean;
     deny_reason: string | null;
     required_permissions: string[];
+    created_at: string;
+    expires_at: string;
+    fingerprint: string;
+};
+
+export type CopilotResolutionState =
+    | 'resolved'
+    | 'partial'
+    | 'missing_context'
+    | 'clarification_required'
+    | 'denied'
+    | 'not_understood';
+
+export type CopilotActionBoundary =
+    | 'none'
+    | 'proposed'
+    | 'executable'
+    | 'executed'
+    | 'blocked';
+
+export type CopilotResolution = {
+    state: CopilotResolutionState;
+    confidence: 'high' | 'medium' | 'low';
+    action_boundary: CopilotActionBoundary;
+    understood: Array<Record<string, unknown>>;
+    unresolved: Array<Record<string, unknown>>;
+    missing: Array<Record<string, unknown> | string>;
+    denials: Array<Record<string, unknown>>;
 };
 
 export type CopilotCredential = {
@@ -282,6 +313,7 @@ export type CopilotResponse = {
     actions: CopilotActionProposal[];
     requires_confirmation: boolean;
     references: CopilotReference[];
+    resolution: CopilotResolution;
     // Fase 1b: bloque opcional de explicabilidad. Renderizado como header
     // discreto en el UI cuando existe.
     interpretation?: CopilotInterpretation | null;
@@ -410,6 +442,8 @@ export async function postCopilotAction(
             },
             body: JSON.stringify({
                 conversation_id: payload.conversation_id,
+                proposal_id: payload.action.id,
+                fingerprint: payload.action.fingerprint,
                 target: payload.action.target,
                 payload: payload.action.payload,
             }),

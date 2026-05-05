@@ -35,12 +35,18 @@ class ExecuteUsersCopilotActionRequest extends FormRequest
             'target.user_id' => ['required_unless:action_type,'.CopilotActionType::CreateUser->value, 'integer', 'exists:users,id'],
             'target.name' => ['nullable', 'string', 'max:255'],
             'target.email' => ['nullable', 'email', 'max:255'],
+            'target.is_active' => ['nullable', 'boolean'],
             'payload' => ['nullable', 'array'],
             'conversation_id' => ['nullable', 'uuid'],
+            'proposal_id' => ['nullable', 'uuid'],
+            'fingerprint' => ['nullable', 'string', 'size:64'],
             'payload.name' => ['required_if:action_type,'.CopilotActionType::CreateUser->value, 'string', 'max:255'],
             'payload.email' => ['required_if:action_type,'.CopilotActionType::CreateUser->value, 'email', 'max:255'],
             'payload.roles' => ['required_if:action_type,'.CopilotActionType::CreateUser->value, 'array', 'min:1'],
             'payload.roles.*' => ['integer', 'exists:roles,id'],
+            'payload.role_labels' => ['nullable', 'array'],
+            'payload.role_labels.*' => ['string', 'max:255'],
+            'payload.reason' => ['nullable', 'string', 'max:255'],
         ];
     }
 

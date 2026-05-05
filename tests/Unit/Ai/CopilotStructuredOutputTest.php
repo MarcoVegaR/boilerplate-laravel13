@@ -131,3 +131,77 @@ it('rebuilds snapshot subset count responses from conversation state', function 
         ->and(data_get($payload, 'cards.0.data.metric.value'))->toBe(4)
         ->and(data_get($payload, 'meta.diagnostics.source_of_truth'))->toBe('conversation_snapshot');
 });
+
+it('derives canonical resolution for missing context clarifications', function () {
+    $payload = CopilotStructuredOutput::reconstruct(
+        payload: [
+            'answer' => 'Voy a continuar.',
+            'intent' => 'ambiguous',
+            'cards' => [[
+                'kind' => 'clarification',
+                'title' => 'Falta contexto',
+                'summary' => 'Necesito contexto previo.',
+                'data' => [
+                    'reason' => 'missing_context',
+                    'question' => 'Necesito contexto previo.',
+                    'options' => [],
+                ],
+            ]],
+            'actions' => [],
+            'requires_confirmation' => false,
+            'references' => [],
+            'meta' => [
+                'module' => 'users',
+                'channel' => 'web',
+                'subject_user_id' => null,
+                'fallback' => false,
+                'diagnostics' => null,
+            ],
+        ],
+        plan: [
+            'intent_family' => 'ambiguous',
+            'capability_key' => 'users.clarification',
+        ],
+        snapshot: CopilotConversationSnapshot::empty(),
+    );
+
+    expect(data_get($payload, 'resolution.state'))->toBe('missing_context')
+        ->and(data_get($payload, 'resolution.action_boundary'))->toBe('none')
+        ->and(data_get($payload, 'resolution.missing.0.slot'))->toBe('context');
+});
+
+it('derives canonical resolution for denied payloads', function () {
+    $payload = CopilotStructuredOutput::ensureResolution([
+        'answer' => 'No puedo hacerlo.',
+        'intent' => 'denied',
+        'cards' => [[
+            'kind' => 'denied',
+            'title' => 'Solicitud denegada',
+            'summary' => 'No puedo hacerlo.',
+            'data' => [
+                'category' => 'bypass_policy',
+                'reason' => 'denied:bypass_policy',
+                'message' => 'No puedo saltarme validaciones.',
+                'alternatives' => [],
+            ],
+        ]],
+        'actions' => [],
+        'requires_confirmation' => false,
+        'references' => [],
+        'meta' => [
+            'module' => 'users',
+            'channel' => 'web',
+            'subject_user_id' => null,
+            'fallback' => false,
+            'capability_key' => 'users.denied',
+            'intent_family' => 'denied',
+            'conversation_state_version' => 1,
+            'response_source' => 'local_orchestrator',
+            'diagnostics' => null,
+        ],
+    ]);
+
+    expect(data_get($payload, 'resolution.state'))->toBe('denied')
+        ->and(data_get($payload, 'resolution.action_boundary'))->toBe('blocked')
+        ->and(data_get($payload, 'resolution.denials.0.reason_code'))->toBe('bypass_policy');
+});

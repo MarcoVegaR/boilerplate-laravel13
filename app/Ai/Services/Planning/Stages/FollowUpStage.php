@@ -14,6 +14,12 @@ final class FollowUpStage implements PlannerStage
 {
     public function handle(PlanningContext $context, UsersCopilotRequestPlanner $planner): ?array
     {
+        $boundaryPlan = $planner->resolveContextBoundaryPrompt($context->normalized, $context->snapshot);
+
+        if ($boundaryPlan !== null) {
+            return $boundaryPlan;
+        }
+
         return $planner->resolveFollowUp($context->normalized, $context->snapshot);
     }
 

@@ -20,8 +20,10 @@ use App\Ai\Services\Planning\Stages\HelpCreateUserStage;
 use App\Ai\Services\Planning\Stages\HelpUnknownStage;
 use App\Ai\Services\Planning\Stages\InformationalHelpStage;
 use App\Ai\Services\Planning\Stages\MetricsStage;
+use App\Ai\Services\Planning\Stages\MixedCreateSearchStage;
 use App\Ai\Services\Planning\Stages\MixedMetricsSearchStage;
 use App\Ai\Services\Planning\Stages\PendingClarificationStage;
+use App\Ai\Services\Planning\Stages\PendingCreateUserStage;
 use App\Ai\Services\Planning\Stages\PermissionSearchStage;
 use App\Ai\Services\Planning\Stages\RolesCatalogStage;
 use App\Ai\Services\Planning\Stages\SearchStage;
@@ -30,6 +32,7 @@ use App\Ai\Services\Planning\Stages\SubjectUserStage;
 use App\Ai\Support\CopilotConversationSnapshot;
 use App\Ai\Support\CopilotPlannerTelemetry;
 use App\Ai\Support\UsersCopilotDomainLexicon;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
@@ -129,15 +132,17 @@ class UsersCopilotRequestPlanner
         return $this->pipeline = new PlanningPipeline([
             new DenialStage,
             new StalenessConfirmationStage,
+            new FollowUpStage,
             new ConversationContinuationStage,
+            new PendingCreateUserStage,
             new HelpCreateUserStage, // ← Fix Fase 5: help sobre crear usuario
             new InformationalHelpStage,
             new PendingClarificationStage,
             new ConfiguredMatrixStage,
             new ActionExplanationStage,
+            new MixedCreateSearchStage,
             new CreateUserIntentStage, // ← Fix Fase 5: salta EntityResolution para create
             new EntityResolutionStage, // ← escribe $context->entityPlan
-            new FollowUpStage,
             new MixedMetricsSearchStage,
             new RolesCatalogStage,
             new MetricsStage,
@@ -535,6 +540,61 @@ class UsersCopilotRequestPlanner
         return null;
     }
 
+    public function resolveContextBoundaryPrompt(string $normalized, CopilotConversationSnapshot $snapshot): ?array
+    {
+        if ($snapshot->hasContext()) {
+            return null;
+        }
+
+        if ($this->looksLikeActionProposal($normalized) && $this->looksLikeBulkAction($normalized)) {
+            return null;
+        }
+
+        if (preg_match('/\b(?:haz|hacer|hace|hac[eé]?)\s+lo\s+mismo\b|\blo\s+mismo\b/u', $normalized) === 1) {
+            return $this->clarificationPlan(
+                normalized: $normalized,
+                reason: 'missing_context',
+                question: 'Necesito un antecedente estructurado para saber que accion repetir.',
+            );
+        }
+
+        if (! $this->isCreateUserProposal($normalized) && ! $this->looksLikeConditionalSearch($normalized) && ($this->looksLikeConfirmation($normalized) || $this->looksLikeStandaloneActionConfirmation($normalized))) {
+            return $this->clarificationPlan(
+                normalized: $normalized,
+                reason: 'missing_context',
+                question: 'No tengo una propuesta pendiente que confirmar. Indica la accion y el usuario especifico antes de continuar.',
+            );
+        }
+
+        if ($this->looksLikeEntityReference($normalized)) {
+            return $this->clarificationPlan(
+                normalized: $normalized,
+                reason: 'missing_context',
+                question: 'Necesito que me indiques a que usuario te refieres antes de continuar.',
+            );
+        }
+
+        if ($this->looksLikeCountFollowUp($normalized) || $this->looksLikeSubsetRefinement($normalized)) {
+            return $this->clarificationPlan(
+                normalized: $normalized,
+                reason: 'missing_context',
+                question: 'Necesito una busqueda o resultado previo para responder a ese seguimiento.',
+            );
+        }
+
+        if ($this->looksLikeActionProposal($normalized)
+            && ! $this->isCreateUserProposal($normalized)
+            && $this->extractEntitySearchQuery($normalized) === null) {
+            return $this->clarificationPlan(
+                normalized: $normalized,
+                reason: 'missing_context',
+                question: 'Necesito que indiques el usuario especifico antes de proponer esa accion.',
+            );
+        }
+
+        return null;
+    }
+
     /**
      * @return array<string, mixed>|null
      */
@@ -651,7 +711,7 @@ class UsersCopilotRequestPlanner
     protected function looksLikeConfirmation(string $normalized): bool
     {
         $confirmationPatterns = [
-            '/\b(si|sí|yes|correcto|exacto|as[ií]\s+es|claro|por\s+supuesto)\b/u',
+            '/^\s*(si|sí|yes|correcto|exacto|as[ií]\s+es|claro|por\s+supuesto)\b/u',
             '/\b(ese|esa|el\s+que\s+dices?|la\s+que\s+dices?|el\s+que\s+indicas?|el\s+primero|la\s+primera)\b/u',
             '/\b(el\s+que\s+me\s+indicas?|la\s+que\s+me\s+indicas?|el\s+sugerido|la\s+sugerida)\b/u',
             '/\b(me\s+refiero\s+a|quise\s+decir|quer[ií]a\s+decir|me\s+refer[ií]a)\b/u',
@@ -665,6 +725,17 @@ class UsersCopilotRequestPlanner
         }
 
         return false;
+    }
+
+    protected function looksLikeConditionalSearch(string $normalized): bool
+    {
+        return preg_match('/\bsi\s+(ya\s+)?existe\b/u', $normalized) === 1
+            || preg_match('/\bsi\s+puedes?\b/u', $normalized) === 1;
+    }
+
+    protected function looksLikeStandaloneActionConfirmation(string $normalized): bool
+    {
+        return preg_match('/\b(confirma|confirmalo|confirmar|ejecuta|ejecutalo|hazlo|hacelo|procede|adelante|dale|ok|listo)\b/u', $normalized) === 1;
     }
 
     /**
@@ -758,6 +829,14 @@ class UsersCopilotRequestPlanner
             $filters['email_verified'] = true;
         }
 
+        if (preg_match('/\b(con\s+dos\s+factores|con\s+2fa|tiene\s+2fa|tienen\s+2fa|2fa)\b/u', $normalized) === 1) {
+            $filters['two_factor_enabled'] = true;
+        }
+
+        if (preg_match('/\b(sin\s+dos\s+factores|sin\s+2fa)\b/u', $normalized) === 1) {
+            $filters['two_factor_enabled'] = false;
+        }
+
         if ($this->extractHasRolesFilter($normalized) === false) {
             $filters['has_roles'] = false;
         }
@@ -796,6 +875,14 @@ class UsersCopilotRequestPlanner
         $resolvedUserId ??= $snapshot->singleResultUserId();
 
         if (! is_int($resolvedUserId)) {
+            if (($snapshot->lastResultCount() ?? 0) > 1) {
+                return $this->clarificationPlan(
+                    normalized: $normalized,
+                    reason: 'ambiguous_target',
+                    question: 'Hay varios usuarios posibles en el contexto previo. Indica cual de ellos quieres revisar.',
+                );
+            }
+
             return $this->clarificationPlan(
                 normalized: $normalized,
                 reason: 'missing_context',
@@ -1141,6 +1228,34 @@ class UsersCopilotRequestPlanner
         ];
     }
 
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function matchMixedCreateSearchIntent(string $normalized): ?array
+    {
+        if (! $this->isCreateUserProposal($normalized)
+            || preg_match('/\b(busca|buscar|checa|activos|existe|parecido|similar|permisos|datos\s+te\s+faltan|crear\s+usuarios\s+en\s+general|hay\s+otros|ya\s+existe|si\s+ya\s+existe|si\s+no\s+hay)\b/u', $normalized) !== 1) {
+            return null;
+        }
+
+        $searchPlan = $this->searchPlan($normalized);
+
+        return [
+            ...$searchPlan,
+            'request_normalization' => $normalized,
+            'capability_key' => 'users.mixed.create_search',
+            'mixed_segments' => [
+                [
+                    'text' => 'Preparar alta guiada de usuario',
+                    'status' => 'not_executed',
+                    'reason' => 'las altas requieren una propuesta completa y confirmacion explicita antes de ejecutar',
+                    'suggested_follow_up' => 'Completa la propuesta de alta guiada en un turno separado',
+                ],
+            ],
+            'create_user_payload' => $this->extractCreateUserPayload($normalized),
+        ];
+    }
+
     protected function extractMixedSearchFragment(string $normalized): ?string
     {
         $segments = preg_split('/\s+y\s+/u', $normalized) ?: [];
@@ -1370,9 +1485,10 @@ class UsersCopilotRequestPlanner
     protected function extractSearchQuery(string $normalized): ?string
     {
         $patterns = [
-            '/\b(?:llamad[oa]|nombre)\s+(.+?)(?:\s*$)/u',
+            '/\b(?:llamad[oa]s?|nombre)\s+(.+?)(?:\s*$)/u',
             '/\b(?:busca|buscar|encuentra|encontrar|muestra|mostrar|lista|listar|listame|dame)\s+(?:al\s+)?usuario\s+(.+?)(?:\s*$)/u',
-            '/\b(?:busca|buscar|encuentra|encontrar)\s+a\s+(.+?)(?:\s*$)/u',
+            '/\b(?:busca|buscar|encuentra|encontrar|checa)\s+a\s+(.+?)(?:\s*$)/u',
+            '/\bsi\s+no\s+hay\s+(?:una|un)?\s*(.+?)(?:,|\s+y\s+|$)/u',
             '/\b(?:con\s+nombre)\s+(.+?)(?:\s*$)/u',
             '/\b(?:hay|existe|tienen?)\s+(?:algun|alguna|alguno|algunos|algunas|un|una)\s+(.+?)(?:\s*$)/u',
         ];
@@ -1489,6 +1605,40 @@ class UsersCopilotRequestPlanner
     /**
      * @return array<string, mixed>
      */
+    public function matchPendingCreateUserContinuation(string $normalized, CopilotConversationSnapshot $snapshot): ?array
+    {
+        $pending = $snapshot->pendingCreateUser();
+
+        if (! is_array($pending)) {
+            return null;
+        }
+
+        $currentPayload = is_array($pending['payload'] ?? null) ? $pending['payload'] : [];
+        $mergedPayload = [
+            ...$currentPayload,
+            ...array_filter($this->extractCreateUserPayload($normalized), static fn (mixed $value): bool => $value !== null && $value !== []),
+        ];
+
+        if ($mergedPayload === $currentPayload && ! $this->looksLikeStandaloneActionConfirmation($normalized)) {
+            return null;
+        }
+
+        return [
+            'request_normalization' => $normalized,
+            'intent_family' => 'action_proposal',
+            'capability_key' => 'users.actions.create_user',
+            'filters' => $this->emptyFilters(),
+            'resolved_entity' => null,
+            'missing_slots' => [],
+            'clarification_state' => null,
+            'proposal_vs_execute' => 'proposal',
+            'create_user_payload' => $mergedPayload,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     public function actionPlan(string $normalized, ?User $subjectUser): array
     {
         $capabilityKey = match (true) {
@@ -1517,6 +1667,7 @@ class UsersCopilotRequestPlanner
                 'missing_slots' => [],
                 'clarification_state' => null,
                 'proposal_vs_execute' => 'proposal',
+                'create_user_payload' => $this->extractCreateUserPayload($normalized),
             ];
         }
 
@@ -1956,6 +2107,36 @@ class UsersCopilotRequestPlanner
             return null;
         }
 
+        if (($this->isCreateUserProposal($normalized) || preg_match('/\bcrea(?:r)?\s+(?:uno|un|una)\b/u', $normalized) === 1)
+            && preg_match('/\b(elimina|eliminar|borra|borrar|exporta|exportar|csv|excel|pdf|todos\s+los\s+usuarios|usuarios\s+inactivos)\b/u', $normalized) === 1) {
+            return [
+                'request_normalization' => $normalized,
+                'intent_family' => 'partial',
+                'capability_key' => 'users.mixed.create_unsupported',
+                'filters' => $this->emptyFilters(),
+                'resolved_entity' => null,
+                'missing_slots' => [],
+                'clarification_state' => null,
+                'proposal_vs_execute' => 'none',
+                'mixed_segments' => [[
+                    'text' => 'Rama de accion no soportada',
+                    'status' => 'not_executed',
+                    'reason' => 'la solicitud incluye exportacion o accion destructiva no soportada',
+                    'suggested_follow_up' => 'Separa la creacion guiada en un pedido con nombre, email y rol',
+                ]],
+            ];
+        }
+
+        if (preg_match('/\balgo\s+de\s+admin\b/u', $normalized) === 1
+            && preg_match('/\bno\s+total\b/u', $normalized) === 1) {
+            return $this->clarificationPlan(
+                normalized: $normalized,
+                reason: 'ambiguous_role',
+                question: 'Necesito que indiques un rol concreto y permitido. No puedo inferir “algo de admin pero no total”.',
+                missingSlots: ['roles'],
+            );
+        }
+
         // 1. Impersonation (highest precedence)
         // Fix Fase 5: ampliamos para cubrir "necesito entrar como", "quiero
         // entrar a la cuenta de", "ingresar como X para", etc.
@@ -1969,12 +2150,38 @@ class UsersCopilotRequestPlanner
             );
         }
 
+        if (preg_match('/\b(sin\s+(validar|verificar|revisar)\s+(permisos?|politicas?|validaciones?)|salt(?:a|ar|ate)\s+(los\s+)?(permisos?|validaciones?|politicas?)|ignora\s+(los\s+)?(permisos?|validaciones?|politicas?))\b/u', $normalized) === 1) {
+            return $this->clarificationPlan(
+                normalized: $normalized,
+                reason: 'denied:bypass_policy',
+                question: 'No puedo saltarme validaciones, permisos ni politicas de seguridad.',
+            );
+        }
+
+        if (preg_match('/\b(acceso\s+total|todos\s+los\s+permisos|super\s*admin|superadmin|administrador\s+total|privilegios?\s+(maximos|totales)|control\s+total)\b/u', $normalized) === 1
+            && preg_match('/\b(haz|hacer|dale|darle|pon|ponle|asigna|asignar|convierte|convertir|otorga|concede|conceder)\b/u', $normalized) === 1) {
+            return $this->clarificationPlan(
+                normalized: $normalized,
+                reason: 'denied:privilege_escalation',
+                question: 'No puedo conceder acceso total ni elevar privilegios desde el copiloto sin una politica y permisos validos.',
+            );
+        }
+
+        if (preg_match('/\b(borra|borrar|elimina|eliminar|destruye|destruir)\b/u', $normalized) === 1
+            && preg_match('/\b(todos|todas|administradores|admins?|con\s+rol|usuarios\s+administradores)\b/u', $normalized) === 1) {
+            return $this->clarificationPlan(
+                normalized: $normalized,
+                reason: 'denied:unsupported_bulk',
+                question: 'No puedo ejecutar borrados ni acciones destructivas masivas desde el copiloto.',
+            );
+        }
+
         // 2. Sensitive data — requires exposure indicator + sensitive term co-occurrence
         // Fix Fase 5: incorporamos paraphrases coloquiales:
         // - "hash de contrasena", "hash del password"
         // - "secreto del autenticador", "secreto de google authenticator"
         // - "codigo de doble factor", "codigo 2fa", "token del authenticator"
-        $sensitiveTerms = '/\b(contrasena|password|clave\s+de\s+acceso|token|2fa|otp|secret|secreto|recovery\s+code|codigo\s+de\s+recuperacion|codigo\s+(de\s+)?(doble\s+factor|2fa|segundo\s+factor)|doble\s+factor|api\s+key|bearer|credencial|autenticador|authenticator|hash\s+(de\s+)?(contrasena|password|clave))\b/u';
+        $sensitiveTerms = '/\b(contrasena|password|clave\s+de\s+acceso|token|2fa|otp|secret|secreto|recovery\s+code|codigo\s+de\s+recuperacion|codigo\s+(de\s+)?(doble\s+factor|2fa|segundo\s+factor)|doble\s+factor|api\s+key|bearer|credencial|credenciales|autenticador|authenticator|hash\s+(de\s+)?(contrasena|password|clave)|emails?\s+privados?|correos?\s+privados?)\b/u';
         $exposureIndicators = '/\b(dame|dime|muestra|muestrame|mostrar|mostrame|revela|revelar|cual\s+es|obtener|ver\s+la|ver\s+el|enviame|pasame|compartime|decime|necesito|quiero|borrale\s+la|quitale\s+la|cambia\s+la|con\s+que)\b/u';
 
         if (preg_match($sensitiveTerms, $normalized) === 1 && preg_match($exposureIndicators, $normalized) === 1) {
@@ -2166,12 +2373,13 @@ class UsersCopilotRequestPlanner
         return str_contains($normalized, 'solo los ')
             || str_contains($normalized, 'ahora solo los ')
             || str_contains($normalized, 'muestrame los ')
-            || str_contains($normalized, 'solo las ');
+            || str_contains($normalized, 'solo las ')
+            || preg_match('/\bde\s+es[oa]s\b/u', $normalized) === 1;
     }
 
     protected function looksLikeEntityReference(string $normalized): bool
     {
-        return preg_match('/\b(ese usuario|esa usuaria|desactivalo|reactivalo|restablecele|propon desactivarlo|propon activarlo)\b/u', $normalized) === 1;
+        return preg_match('/\b(ese usuario|esa usuaria|el de arriba|la de arriba|desactivalo|reactivalo|restablecele|propon desactivarlo|propon activarlo)\b/u', $normalized) === 1;
     }
 
     protected function looksLikeUserTargetingPrompt(string $normalized): bool
@@ -2254,6 +2462,16 @@ class UsersCopilotRequestPlanner
         }
 
         return null;
+    }
+
+    protected function sanitizeEntityCandidate(string $candidate): ?string
+    {
+        $candidate = trim($candidate, " .,!?:;\"'");
+        $candidate = preg_replace('/\s+/u', ' ', $candidate) ?? $candidate;
+        $candidate = preg_replace('/\b(?:por\s+favor|si\s+puedes|si\s+es\s+posible|con\s+correo|correo|email)\b.*$/u', '', $candidate) ?? $candidate;
+        $candidate = trim($candidate, " .,!?:;\"'");
+
+        return $candidate !== '' ? $candidate : null;
     }
 
     /**
@@ -2610,8 +2828,13 @@ class UsersCopilotRequestPlanner
         // Verbos literales ya existentes.
         if (str_contains($normalized, 'crear usuario')
             || str_contains($normalized, 'crear un usuario')
+            || str_contains($normalized, 'crea un usuario')
             || str_contains($normalized, 'creame el usuario')
             || str_contains($normalized, 'creame un usuario')
+            || str_contains($normalized, 'prepara la creacion')
+            || str_contains($normalized, 'preparar la creacion')
+            || preg_match('/\bcrea\s+a\s+[a-z]/u', $normalized) === 1
+            || preg_match('/\bsi\s+no\s+hay\s+(?:una|un)?\s*[a-z].*\b(agregala|agregalo|agrega|crear|crea)\b/u', $normalized) === 1
             || str_contains($normalized, 'alta')) {
             return true;
         }
@@ -2624,7 +2847,7 @@ class UsersCopilotRequestPlanner
         // Fix Fase 5: verbos naturales de alta (registrar/sumar/incorporar/cargar/agregar).
         // Se exige email o novedad para reducir falsos positivos.
         if ($hasEmail || $hasNovelty) {
-            if (preg_match('/\b(registra(?:r|me|lo|la)?|sumar?|sumame|incorpora(?:r|lo|la)?|carga(?:r|lo|la)?|agrega(?:r|lo|la|me)?|registrarme)\b/u', $normalized) === 1) {
+            if (preg_match('/\b(crea(?:r|me|lo|la)?|prepara(?:r|me|lo|la)?|registra(?:r|me|lo|la)?|sumar?|sumame|incorpora(?:r|lo|la)?|carga(?:r|lo|la)?|agrega(?:r|lo|la|me)?|registrarme)\b/u', $normalized) === 1) {
                 return true;
             }
         }
@@ -2658,12 +2881,79 @@ class UsersCopilotRequestPlanner
             return null;
         }
 
-        return Str::lower($matches[0]);
+        return $matches[0];
     }
 
-    protected function sanitizeEntityCandidate(string $candidate): ?string
+    /**
+     * @return array{name: ?string, email: ?string, roles: list<string>}
+     */
+    protected function extractCreateUserPayload(string $normalized): array
     {
-        $sanitized = $this->normalizePrompt($candidate);
+        return [
+            'name' => $this->extractCreateUserName($normalized),
+            'email' => $this->extractEmailFromText($normalized),
+            'roles' => $this->extractCreateUserRoleHints($normalized),
+        ];
+    }
+
+    protected function extractCreateUserName(string $normalized): ?string
+    {
+        $withoutEmail = trim((string) preg_replace('/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/u', '', $normalized));
+
+        if (preg_match('/\b(?:nombre|llamado|llamada|se\s+llama|para)\s+([a-z][a-z\s]{2,80}?)(?:\s*,?\s*(?:con|correo|email|rol|perfil)\b|$)/u', $withoutEmail, $matches) === 1) {
+            return Str::of($matches[1])->squish()->title()->value();
+        }
+
+        if (preg_match('/\balta\s+(?:uno|una|un)?\s*nuevo:?\s+([a-z][a-z\s]{2,80}?)(?:,|\s+(?:con|correo|email|rol|perfil)\b|$)/u', $withoutEmail, $matches) === 1) {
+            return Str::of($matches[1])->squish()->title()->value();
+        }
+
+        if (preg_match('/\b(?:quise\s+decir|queria\s+decir|era)\s+([a-z][a-z\s]{2,80}?)(?:\s+no\s+|$)/u', $withoutEmail, $matches) === 1) {
+            return Str::of($matches[1])->squish()->title()->value();
+        }
+
+        if (preg_match('/\bcreacion\s+de\s+([a-z][a-z\s]{2,80}?)(?:\s+(?:con|correo|email|rol|perfil)\b|$)/u', $withoutEmail, $matches) === 1) {
+            return Str::of($matches[1])->squish()->title()->value();
+        }
+
+        if (preg_match('/\b(?:alta|crear|crea|creame|agrega|agregar)\s+(?:a|para|usuario|usuaria|un\s+usuario|una\s+usuaria)?\s*([a-z][a-z\s]{2,80}?)(?:\s+(?:con|correo|email|rol|perfil)\b|$)/u', $withoutEmail, $matches) === 1) {
+            return Str::of($matches[1])->squish()->title()->value();
+        }
+
+        return null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function extractCreateUserRoleHints(string $normalized): array
+    {
+        $roleFilter = $this->extractRoleFilter($normalized);
+
+        if ($roleFilter !== null) {
+            return [$roleFilter];
+        }
+
+        return Role::query()
+            ->active()
+            ->get()
+            ->filter(function (Role $role) use ($normalized): bool {
+                $name = mb_strtolower($role->name);
+                $displayName = $role->display_name !== null ? mb_strtolower($role->display_name) : null;
+
+                return (preg_match('/\brol(?:es)?\b/u', $normalized) === 1 || preg_match('/\bcomo\s+(?:admin|administrador|administradora|editor|soporte)\b/u', $normalized) === 1)
+                    && (str_contains($normalized, $name)
+                        || ($displayName !== null && str_contains($normalized, $displayName))
+                        || (preg_match('/\b(?:admin|administrador|administradora)\b/u', $normalized) === 1 && (str_contains($name, 'admin') || ($displayName !== null && str_contains($displayName, 'admin')))));
+            })
+            ->map(fn (Role $role): string => $role->display_name ?? $role->name)
+            ->values()
+            ->all();
+    }
+
+    protected function extractExplicitSearchQuery(string $normalized): ?string
+    {
+        $sanitized = $this->normalizePrompt($normalized);
         $sanitized = preg_replace('/^(?:el|la)?\s*usuario\s+(?:es|se\s+llama)?\s*/u', '', $sanitized) ?? $sanitized;
         $sanitized = preg_replace('/^(?:al|a\s+la|a\s+el|del|de\s+la)\s+/u', '', $sanitized) ?? $sanitized;
         $sanitized = preg_replace('/^(?:efectivo|actual|operativo)\s+de\s+/u', '', $sanitized) ?? $sanitized;

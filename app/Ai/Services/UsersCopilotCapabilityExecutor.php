@@ -6,6 +6,7 @@ use App\Ai\Services\Users\UsersMetricsAggregator;
 use App\Ai\Support\CopilotActionType;
 use App\Ai\Support\UsersCopilotDomainLexicon;
 use App\Ai\Tools\System\Users\ActivateUserTool;
+use App\Ai\Tools\System\Users\CreateUserTool;
 use App\Ai\Tools\System\Users\DeactivateUserTool;
 use App\Ai\Tools\System\Users\GetUserDetailTool;
 use App\Ai\Tools\System\Users\SearchUsersTool;
@@ -84,6 +85,49 @@ class UsersCopilotCapabilityExecutor
                 'last_metrics_snapshot' => [
                     'capability_key' => $capabilityKey,
                     ...$answerFacts,
+                ],
+            ],
+            'diagnostics' => [
+                'executor' => 'users_capability_executor',
+                'source_of_truth' => 'deterministic_backend',
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    public function executeCreateUserProposal(User $actor, array $payload): array
+    {
+        $result = json_decode((new CreateUserTool($actor))->handle(new ToolRequest($payload)), true, 512, JSON_THROW_ON_ERROR);
+        $action = is_array($result['action'] ?? null) ? $result['action'] : null;
+        $missingFields = array_values(array_filter(Arr::wrap($result['missing_fields'] ?? []), static fn (mixed $field): bool => is_string($field)));
+
+        return [
+            'capability_key' => 'users.actions.create_user',
+            'family' => 'action',
+            'outcome' => 'ok',
+            'answer_facts' => $result,
+            'cards' => $action === null ? [] : [[
+                'kind' => 'notice',
+                'title' => 'Alta guiada',
+                'summary' => $missingFields === []
+                    ? 'Revisa la propuesta antes de confirmar la creacion.'
+                    : 'Completa los campos faltantes antes de confirmar.',
+                'data' => [
+                    'missing_fields' => $missingFields,
+                ],
+            ]],
+            'actions' => $action === null ? [] : [$action],
+            'references' => [[
+                'label' => 'Usuarios',
+                'href' => route('system.users.index', absolute: false),
+            ]],
+            'snapshot_updates' => [
+                'pending_create_user' => $missingFields === [] ? null : [
+                    'payload' => is_array($action['payload'] ?? null) ? $action['payload'] : $payload,
+                    'missing_fields' => $missingFields,
                 ],
             ],
             'diagnostics' => [

@@ -28,6 +28,7 @@ import type {
     CopilotNoticeCard,
     CopilotPartialNoticeCard,
     CopilotResponse,
+    CopilotResolution,
     CopilotSearchResultsCard,
 } from '@/lib/copilot';
 
@@ -462,6 +463,50 @@ function InterpretationHeader({
     );
 }
 
+function ResolutionBanner({ resolution }: { resolution: CopilotResolution }) {
+    if (resolution.state === 'resolved' && resolution.action_boundary === 'none') {
+        return null;
+    }
+
+    const stateLabel = {
+        resolved: 'Resuelto',
+        partial: 'Respuesta parcial',
+        missing_context: 'Falta contexto',
+        clarification_required: 'Necesita aclaracion',
+        denied: 'Bloqueado por seguridad',
+        not_understood: 'No entendido',
+    }[resolution.state];
+    const boundaryLabel = {
+        none: 'Sin accion',
+        proposed: 'Accion propuesta',
+        executable: 'Accion ejecutable',
+        executed: 'Accion ejecutada',
+        blocked: 'Accion bloqueada',
+    }[resolution.action_boundary];
+
+    return (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-muted/40 px-3 py-2 text-xs">
+            <Badge variant="outline">{stateLabel}</Badge>
+            {resolution.action_boundary !== 'none' && (
+                <Badge
+                    variant={
+                        resolution.action_boundary === 'blocked'
+                            ? 'secondary'
+                            : 'default'
+                    }
+                >
+                    {boundaryLabel}
+                </Badge>
+            )}
+            {resolution.missing.length > 0 && (
+                <span className="text-muted-foreground">
+                    Faltan: {resolution.missing.map(String).join(', ')}
+                </span>
+            )}
+        </div>
+    );
+}
+
 function renderCard(
     card: CopilotCard,
     onSelectPrompt?: (prompt: string) => void,
@@ -599,6 +644,10 @@ export function CopilotMessageList({
                                         }
                                     />
                                 )}
+
+                                <ResolutionBanner
+                                    resolution={item.response.resolution}
+                                />
 
                                 <div className="rounded-2xl border bg-card px-4 py-3 shadow-sm">
                                     <CopilotMarkdown

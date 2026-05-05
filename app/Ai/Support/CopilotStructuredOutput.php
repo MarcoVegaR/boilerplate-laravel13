@@ -57,6 +57,8 @@ class CopilotStructuredOutput
         'impersonation',
         'unsupported_operation',
         'unsupported_bulk',
+        'privilege_escalation',
+        'bypass_policy',
     ];
 
     /**
@@ -229,6 +231,7 @@ class CopilotStructuredOutput
                 ),
                 'diagnostics' => $diagnostics,
             ],
+            'resolution' => self::normalizeResolution($payload['resolution'] ?? null, $intent, $cards, $actions, (bool) $payload['requires_confirmation'], $meta, $diagnostics),
         ];
     }
 
@@ -297,7 +300,7 @@ class CopilotStructuredOutput
             $cards = $clarification === null ? [] : [$clarification];
             $actions = [];
 
-            return [
+            return self::withResolution([
                 'answer' => is_string($question) ? $question : 'Necesito una aclaracion para continuar.',
                 'intent' => 'ambiguous',
                 'cards' => $cards,
@@ -319,14 +322,14 @@ class CopilotStructuredOutput
                         'repair' => 'clarification_authoritative',
                     ]),
                 ],
-            ];
+            ]);
         }
 
         if ($capabilityKey === 'users.snapshot.result_count') {
             $count = $snapshot->lastResultCount();
             $filters = $snapshot->lastFilters();
 
-            return [
+            return self::withResolution([
                 'answer' => $count === 1
                     ? 'El subconjunto actual tiene 1 usuario.'
                     : 'El subconjunto actual tiene '.(int) $count.' usuarios.',
@@ -364,13 +367,13 @@ class CopilotStructuredOutput
                         'source_of_truth' => 'conversation_snapshot',
                     ]),
                 ],
-            ];
+            ]);
         }
 
         $canConfirm = count($actions) > 0
             && collect($actions)->contains(static fn (array $action): bool => (bool) ($action['can_execute'] ?? false));
 
-        return [
+        return self::withResolution([
             ...$payload,
             'actions' => $actions,
             'requires_confirmation' => $intentFamily === 'action_proposal' ? $canConfirm : false,
@@ -386,7 +389,7 @@ class CopilotStructuredOutput
                 'response_source' => $responseSource,
                 'diagnostics' => is_array($meta['diagnostics'] ?? null) ? $meta['diagnostics'] : null,
             ],
-        ];
+        ]);
     }
 
     /**
@@ -442,7 +445,7 @@ class CopilotStructuredOutput
         array $diagnostics = [],
         ?int $subjectUserId = null,
     ): array {
-        return [
+        return self::withResolution([
             'answer' => $answer ?? config('ai-copilot.fallback.message'),
             'intent' => 'error',
             'cards' => [],
@@ -460,7 +463,7 @@ class CopilotStructuredOutput
                 'response_source' => 'fallback',
                 'diagnostics' => empty($diagnostics) ? null : $diagnostics,
             ],
-        ];
+        ]);
     }
 
     /**
@@ -797,6 +800,190 @@ class CopilotStructuredOutput
         return $count === 1
             ? 'Se encontro 1 usuario.'
             : "Se encontraron {$count} usuarios.";
+    }
+
+    public static function ensureResolution(array $payload): array
+    {
+        return self::withResolution($payload);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    protected static function withResolution(array $payload): array
+    {
+        $meta = is_array($payload['meta'] ?? null) ? $payload['meta'] : [];
+        $diagnostics = is_array($meta['diagnostics'] ?? null) ? $meta['diagnostics'] : null;
+        $cards = array_values(array_filter(Arr::wrap($payload['cards'] ?? []), static fn (mixed $card): bool => is_array($card)));
+        $actions = array_values(array_filter(Arr::wrap($payload['actions'] ?? []), static fn (mixed $action): bool => is_array($action)));
+        $intent = is_string($payload['intent'] ?? null) ? $payload['intent'] : 'error';
+
+        return [
+            ...$payload,
+            'resolution' => self::normalizeResolution(
+                $payload['resolution'] ?? null,
+                $intent,
+                $cards,
+                $actions,
+                (bool) ($payload['requires_confirmation'] ?? false),
+                $meta,
+                $diagnostics,
+            ),
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $cards
+     * @param  list<array<string, mixed>>  $actions
+     * @param  array<string, mixed>  $meta
+     * @param  array<string, mixed>|null  $diagnostics
+     * @return array<string, mixed>
+     */
+    protected static function normalizeResolution(
+        mixed $resolution,
+        string $intent,
+        array $cards,
+        array $actions,
+        bool $requiresConfirmation,
+        array $meta,
+        ?array $diagnostics,
+    ): array {
+        $provided = is_array($resolution) ? $resolution : [];
+        $state = self::resolutionState($provided['state'] ?? null, $intent, $cards, $meta);
+        $actionBoundary = self::resolutionActionBoundary($provided['action_boundary'] ?? null, $state, $actions, $requiresConfirmation);
+        $confidence = in_array($provided['confidence'] ?? null, ['high', 'medium', 'low'], true)
+            ? $provided['confidence']
+            : ((($meta['response_source'] ?? null) === 'fallback' || (($diagnostics['reason'] ?? null) === 'missing_structured_output')) ? 'low' : 'high');
+
+        return [
+            'state' => $state,
+            'confidence' => $confidence,
+            'action_boundary' => $actionBoundary,
+            'understood' => self::resolutionSegments($provided['understood'] ?? null),
+            'unresolved' => self::resolutionSegments($provided['unresolved'] ?? null),
+            'missing' => self::resolutionMissing($provided['missing'] ?? null, $cards, $meta),
+            'denials' => self::resolutionDenials($provided['denials'] ?? null, $cards),
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $cards
+     * @param  array<string, mixed>  $meta
+     */
+    protected static function resolutionState(mixed $state, string $intent, array $cards, array $meta): string
+    {
+        if (in_array($state, ['resolved', 'partial', 'missing_context', 'clarification_required', 'denied', 'not_understood'], true)) {
+            return $state;
+        }
+
+        if ($intent === 'denied' || self::firstCardOfKind($cards, 'denied') !== null || ($meta['intent_family'] ?? null) === 'denied') {
+            return 'denied';
+        }
+
+        if ($intent === 'partial' || self::firstCardOfKind($cards, 'partial_notice') !== null) {
+            return 'partial';
+        }
+
+        if ($intent === 'ambiguous') {
+            $clarification = self::firstCardOfKind($cards, 'clarification');
+
+            return (data_get($clarification, 'data.reason') === 'missing_context') ? 'missing_context' : 'clarification_required';
+        }
+
+        if ($intent === 'error' || (($meta['fallback'] ?? false) === true)) {
+            return 'not_understood';
+        }
+
+        return 'resolved';
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $actions
+     */
+    protected static function resolutionActionBoundary(mixed $actionBoundary, string $state, array $actions, bool $requiresConfirmation): string
+    {
+        if (in_array($actionBoundary, ['none', 'proposed', 'executable', 'executed', 'blocked'], true)) {
+            return $actionBoundary;
+        }
+
+        if ($state === 'denied') {
+            return 'blocked';
+        }
+
+        if ($requiresConfirmation || $actions !== []) {
+            return collect($actions)->contains(static fn (array $action): bool => (bool) ($action['can_execute'] ?? false))
+                ? 'proposed'
+                : 'blocked';
+        }
+
+        return 'none';
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    protected static function resolutionSegments(mixed $segments): array
+    {
+        return array_values(array_filter(Arr::wrap($segments), static fn (mixed $segment): bool => is_array($segment)));
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $cards
+     * @param  array<string, mixed>  $meta
+     * @return list<array<string, mixed>>
+     */
+    protected static function resolutionMissing(mixed $missing, array $cards, array $meta): array
+    {
+        $items = self::resolutionSegments($missing);
+        $clarification = self::firstCardOfKind($cards, 'clarification');
+        $missingSlots = Arr::wrap(data_get($meta, 'diagnostics.missing_slots', []));
+
+        foreach ($missingSlots as $slot) {
+            if (is_string($slot) && $slot !== '') {
+                $items[] = ['slot' => $slot, 'label' => $slot, 'reason' => 'required'];
+            }
+        }
+
+        if (data_get($clarification, 'data.reason') === 'missing_context') {
+            $items[] = ['slot' => 'context', 'label' => 'Contexto previo', 'reason' => 'missing_context'];
+        }
+
+        return $items;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $cards
+     * @return list<array<string, mixed>>
+     */
+    protected static function resolutionDenials(mixed $denials, array $cards): array
+    {
+        $items = self::resolutionSegments($denials);
+        $denied = self::firstCardOfKind($cards, 'denied');
+
+        if ($denied !== null) {
+            $items[] = [
+                'reason_code' => (string) data_get($denied, 'data.category', 'unsupported_operation'),
+                'message' => (string) data_get($denied, 'data.message', data_get($denied, 'summary', 'Solicitud denegada.')),
+            ];
+        }
+
+        return $items;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $cards
+     * @return array<string, mixed>|null
+     */
+    protected static function firstCardOfKind(array $cards, string $kind): ?array
+    {
+        foreach ($cards as $card) {
+            if (($card['kind'] ?? null) === $kind) {
+                return $card;
+            }
+        }
+
+        return null;
     }
 
     /**

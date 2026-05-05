@@ -64,6 +64,15 @@ function browserCopilotResponse(array $overrides = []): array
         'actions' => [],
         'requires_confirmation' => false,
         'references' => [],
+        'resolution' => [
+            'state' => 'resolved',
+            'confidence' => 'high',
+            'action_boundary' => 'none',
+            'understood' => [],
+            'unresolved' => [],
+            'missing' => [],
+            'denials' => [],
+        ],
         'meta' => [
             'module' => 'users',
             'channel' => 'web',
@@ -211,4 +220,133 @@ it('confirms an executable copilot proposal from the browser flow', function () 
         ->assertNoJavaScriptErrors();
 
     Notification::assertSentTo($target, ResetPassword::class);
+});
+
+it('renders resolution states for partial denied missing context and clarification responses', function () {
+    $this->app['env'] = 'local';
+
+    $operator = browserCopilotOperator([
+        'system.users.view',
+        'system.users-copilot.view',
+    ]);
+
+    CopilotBrowserFake::write([
+        browserCopilotResponse([
+            'answer' => 'Resolví la consulta disponible. La parte de acción no fue ejecutada.',
+            'intent' => 'partial',
+            'cards' => [[
+                'kind' => 'partial_notice',
+                'title' => 'Respuesta parcial',
+                'summary' => 'Una parte quedó pendiente.',
+                'data' => [
+                    'segments' => [[
+                        'text' => 'Crear usuario',
+                        'status' => 'not_executed',
+                        'reason' => 'faltan datos obligatorios',
+                        'suggested_follow_up' => 'Indica email y rol',
+                    ]],
+                ],
+            ]],
+            'resolution' => [
+                'state' => 'partial',
+                'confidence' => 'high',
+                'action_boundary' => 'blocked',
+                'understood' => [],
+                'unresolved' => [],
+                'missing' => ['email', 'roles'],
+                'denials' => [],
+            ],
+        ]),
+        browserCopilotResponse([
+            'answer' => 'No puedo mostrar credenciales.',
+            'intent' => 'denied',
+            'cards' => [[
+                'kind' => 'denied',
+                'title' => 'No puedo procesar esta solicitud',
+                'summary' => 'Solicitud bloqueada.',
+                'data' => [
+                    'reason_code' => 'sensitive_data',
+                    'category' => 'sensitive_data',
+                    'message' => 'No puedo mostrar credenciales.',
+                    'alternatives' => [],
+                ],
+            ]],
+            'resolution' => [
+                'state' => 'denied',
+                'confidence' => 'high',
+                'action_boundary' => 'blocked',
+                'understood' => [],
+                'unresolved' => [],
+                'missing' => [],
+                'denials' => [['reason_code' => 'sensitive_data']],
+            ],
+        ]),
+        browserCopilotResponse([
+            'answer' => 'Necesito que me indiques a qué usuario te refieres.',
+            'intent' => 'ambiguous',
+            'cards' => [[
+                'kind' => 'clarification',
+                'title' => 'Necesito una aclaracion',
+                'summary' => 'Necesito contexto.',
+                'data' => [
+                    'reason' => 'missing_context',
+                    'question' => 'Necesito que me indiques a qué usuario te refieres.',
+                    'options' => [],
+                ],
+            ]],
+            'resolution' => [
+                'state' => 'missing_context',
+                'confidence' => 'high',
+                'action_boundary' => 'none',
+                'understood' => [],
+                'unresolved' => [],
+                'missing' => [],
+                'denials' => [],
+            ],
+        ]),
+        browserCopilotResponse([
+            'answer' => 'Necesito email y rol para continuar.',
+            'intent' => 'ambiguous',
+            'cards' => [[
+                'kind' => 'clarification',
+                'title' => 'Necesito una aclaracion',
+                'summary' => 'Faltan datos.',
+                'data' => [
+                    'reason' => 'missing_slots',
+                    'question' => 'Necesito email y rol para continuar.',
+                    'options' => [],
+                ],
+            ]],
+            'resolution' => [
+                'state' => 'clarification_required',
+                'confidence' => 'high',
+                'action_boundary' => 'blocked',
+                'understood' => [],
+                'unresolved' => [],
+                'missing' => ['email', 'roles'],
+                'denials' => [],
+            ],
+        ]),
+    ]);
+
+    $this->actingAs($operator);
+
+    $page = visit(route('system.users.index', [], false));
+
+    $page->click('@copilot-open')
+        ->type('@copilot-prompt', 'mixed')
+        ->press('Enviar')
+        ->assertSee('Respuesta parcial')
+        ->assertSee('Accion bloqueada')
+        ->assertSee('Faltan: email, roles')
+        ->type('@copilot-prompt', 'secretos')
+        ->press('Enviar')
+        ->assertSee('Bloqueado por seguridad')
+        ->type('@copilot-prompt', 'ese')
+        ->press('Enviar')
+        ->assertSee('Falta contexto')
+        ->type('@copilot-prompt', 'crear')
+        ->press('Enviar')
+        ->assertSee('Necesita aclaracion')
+        ->assertNoJavaScriptErrors();
 });

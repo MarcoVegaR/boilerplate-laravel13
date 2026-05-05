@@ -25,6 +25,10 @@ final class ActionProposalStage implements PlannerStage
             $actionSubject = User::query()->find($context->snapshot->singleResultUserId());
         }
 
+        if (! $actionSubject instanceof User && ! $planner->isCreateUserProposal($context->normalized) && ! $context->snapshot->hasContext()) {
+            return $planner->resolveContextBoundaryPrompt($context->normalized, $context->snapshot);
+        }
+
         return $planner->actionPlan($context->normalized, $actionSubject);
     }
 

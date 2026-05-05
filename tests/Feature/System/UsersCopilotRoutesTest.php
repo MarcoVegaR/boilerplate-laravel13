@@ -474,6 +474,28 @@ it('returns deterministic mixed metrics and filtered search cards in one respons
         ->and(data_get($snapshot, 'last_filters.access_profile'))->toBe('administrative_access');
 });
 
+it('returns partial response for mixed create and search requests', function () {
+    $user = authorizedCopilotOperator();
+    User::factory()->active()->create([
+        'name' => 'Miguel Rojas',
+        'email' => 'miguel.rojas@example.com',
+    ]);
+
+    $this->actingAs($user)
+        ->postJson(route('system.users.copilot.messages'), [
+            'prompt' => 'Crea a Miguel Rojas miguel@example.com y además dime si ya existe alguien parecido',
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('response.intent', 'partial')
+        ->assertJsonPath('response.resolution.state', 'partial')
+        ->assertJsonPath('response.actions', [])
+        ->assertJsonPath('response.cards.0.kind', 'search_results')
+        ->assertJsonPath('response.cards.1.kind', 'partial_notice')
+        ->assertJsonPath('response.cards.1.data.segments.0.status', 'not_executed');
+
+    expect(User::query()->where('email', 'miguel@example.com')->exists())->toBeFalse();
+});
+
 it('merges gemini formatter text into the deterministic action proposal payload', function () {
     config()->set('ai-copilot.providers.default', 'gemini');
     config()->set('ai-copilot.model', 'gemini-2.5-flash-lite');
@@ -988,6 +1010,13 @@ it('keeps action proposals read only during message handling', function () {
     Notification::fake();
 
     $user = authorizedCopilotOperator();
+    $user->roles->first()->syncPermissions([
+        'system.users.view',
+        'system.users.create',
+        'system.users.assign-role',
+        'system.users-copilot.view',
+        'system.users-copilot.execute',
+    ]);
     $target = User::factory()->active()->create([
         'name' => 'Mario Operador',
         'email' => 'mario@example.com',
@@ -1051,6 +1080,50 @@ it('keeps action proposals read only during message handling', function () {
         ->and(User::query()->where('email', 'laura@example.com')->exists())->toBeFalse();
 
     Notification::assertNothingSent();
+});
+
+it('keeps incomplete create user proposals pending until required slots are provided', function () {
+    $operatorRole = Role::factory()->active()->create();
+    $operatorRole->syncPermissions([
+        'system.users.view',
+        'system.users.create',
+        'system.users.assign-role',
+        'system.users-copilot.view',
+        'system.users-copilot.execute',
+    ]);
+    $user = User::factory()->withTwoFactor()->create();
+    $user->assignRole($operatorRole);
+    Role::factory()->active()->create([
+        'name' => 'soporte',
+        'display_name' => 'Soporte',
+    ])->syncPermissions(['system.users.view']);
+
+    $conversationId = $this->actingAs($user)
+        ->postJson(route('system.users.copilot.messages'), [
+            'prompt' => 'Propón dar de alta a Laura Copilot con correo laura@example.com',
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('response.intent', 'action_proposal')
+        ->assertJsonPath('response.actions.0.action_type', 'create_user')
+        ->assertJsonPath('response.actions.0.can_execute', false)
+        ->assertJsonPath('response.actions.0.payload.name', 'Laura Copilot')
+        ->assertJsonPath('response.actions.0.payload.email', 'laura@example.com')
+        ->assertJsonPath('response.cards.0.data.missing_fields.0', 'roles')
+        ->json('conversation_id');
+
+    $this->actingAs($user)
+        ->postJson(route('system.users.copilot.messages'), [
+            'prompt' => 'asígnale rol Soporte',
+            'conversation_id' => $conversationId,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('response.intent', 'action_proposal')
+        ->assertJsonPath('response.actions.0.action_type', 'create_user')
+        ->assertJsonPath('response.actions.0.can_execute', true)
+        ->assertJsonPath('response.actions.0.payload.name', 'Laura Copilot')
+        ->assertJsonPath('response.actions.0.payload.email', 'laura@example.com')
+        ->assertJsonPath('response.actions.0.payload.role_labels.0', 'Soporte')
+        ->assertJsonPath('response.requires_confirmation', true);
 });
 
 it('denies continuing another users conversation', function () {
